@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
-## [Unreleased]
+## [2026-09-16]
 
 ### Added
 - Open-source release: README, AGPLv3 license, contributing guide, and this changelog.
