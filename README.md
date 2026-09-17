@@ -94,3 +94,9 @@ Built with these open-source libraries, loaded from [cdnjs](https://cdnjs.com/):
 - [PapaParse](https://www.papaparse.com/) — CSV parsing
 - [JSZip](https://stuk.github.io/jszip/) — zipped Shapefile export
 - [shp.js](https://github.com/calvinmetcalf/shapefile-js) — Shapefile import
+
+## Roadmap of Features
+
+Planned feature enhancements and additions for the tool are:
+
+- potential use of ADAPT framework at https://github.com/AgGateway-ADAPT to output files supported by online grower facing platforms.  Not all platforms will accept shapefile or CSV which may limit growers who would like this data back within their regular tools
