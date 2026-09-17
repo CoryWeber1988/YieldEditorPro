@@ -1,0 +1,3633 @@
+<!DOCTYPE html>
+<!--
+  Yield Editor Pro — Web
+  Copyright (C) 2026 Cory Weber
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published
+  by the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program. If not, see <https://www.gnu.org/licenses/>.
+  Full license text: LICENSE (in this repository) or
+  https://www.gnu.org/licenses/agpl-3.0.html
+
+  Filter/balance/calibrate methodology based on USDA-ARS Yield Editor —
+  see README.md for attribution. This is an independent reimplementation,
+  not official USDA software.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yield Editor Pro — Web</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+:root{
+  --bg:#12150f; --panel:#191d15; --panel2:#1f251a; --line:#2c331f;
+  --text:#e9e7da; --muted:#93987f; --muted2:#666b53;
+  --accent:#93b23f; --accent2:#c6d98a; --gold:#d3a23a; --rust:#c0603a;
+  --radius:3px; --mono:ui-monospace,"SF Mono",Consolas,"Roboto Mono",monospace;
+  --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+:root[data-theme="light"]{
+  --bg:#f3f2ea; --panel:#fbfaf4; --panel2:#efede0; --line:#d8d5c2;
+  --text:#22271a; --muted:#5c614c; --muted2:#8b8f76;
+  --accent:#5f7a24; --accent2:#3e5518; --gold:#966a19; --rust:#a04a29;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:13px; display:flex; flex-direction:column; overflow:hidden;
+}
+h1,h2,h3{font-family:var(--sans); font-weight:600; letter-spacing:.01em; margin:0;}
+button, select, input{font-family:var(--sans); font-size:12.5px;}
+::selection{background:var(--accent); color:#0c0e08;}
+
+/* ---------- top bar ---------- */
+#topbar{
+  display:flex; align-items:center; gap:14px; padding:9px 16px;
+  background:var(--panel); border-bottom:1px solid var(--line); flex:0 0 auto;
+  z-index:20;
+}
+#brand{display:flex; align-items:baseline; gap:8px;}
+#brand .mark{
+  width:9px; height:9px; background:var(--accent); border-radius:1px;
+  transform:rotate(45deg); display:inline-block;
+}
+#brand h1{font-size:15px;}
+#brand .tag{color:var(--muted); font-size:11px; letter-spacing:.04em; text-transform:uppercase;}
+#topbar .spacer{flex:1;}
+#topbar .tbtn{
+  background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  padding:6px 11px; border-radius:var(--radius); cursor:pointer; font-size:12px;
+  display:flex; align-items:center; gap:6px;
+}
+#topbar .tbtn:hover{border-color:var(--accent);}
+#themeToggle{
+  width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center;
+  border-radius:50%;
+}
+
+/* ---------- layout ---------- */
+#body{flex:1; display:flex; min-height:0;}
+#sidebar{
+  width:360px; flex:0 0 auto; background:var(--panel); border-right:1px solid var(--line);
+  display:flex; flex-direction:column; min-height:0;
+}
+#tabs{display:flex; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel2);}
+.tabbtn{
+  flex:1 1 33%; padding:9px 4px; text-align:center; background:none; border:none; color:var(--muted);
+  cursor:pointer; font-size:11px; letter-spacing:.03em; text-transform:uppercase; border-bottom:2px solid transparent;
+}
+.tabbtn.active{color:var(--accent2); border-bottom-color:var(--accent);}
+.tabbtn:hover{color:var(--text);}
+#panels{flex:1; overflow-y:auto; padding:14px 16px 40px;}
+.panel{display:none;}
+.panel.active{display:block;}
+
+.section{margin-bottom:18px;}
+.section h3{
+  font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+  margin-bottom:8px; display:flex; align-items:center; gap:6px;
+}
+.section h3::after{content:""; flex:1; height:1px; background:var(--line);}
+
+.field{margin-bottom:9px;}
+.field label{display:block; font-size:11.5px; color:var(--muted); margin-bottom:3px;}
+.row{display:flex; gap:8px; align-items:center;}
+.row > *{flex:1;}
+select, input[type=text], input[type=number], input[type=file]{
+  width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  padding:6px 8px; border-radius:var(--radius); outline:none;
+}
+select:focus, input:focus{border-color:var(--accent);}
+input[type=number]{font-family:var(--mono);}
+
+.btn{
+  background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  padding:7px 12px; border-radius:var(--radius); cursor:pointer; width:100%;
+  text-align:center; font-size:12.5px; margin-top:4px;
+}
+.btn:hover{border-color:var(--accent);}
+.btn.primary{background:var(--accent); color:#0f1207; border-color:var(--accent); font-weight:600;}
+.btn.primary:hover{background:var(--accent2); border-color:var(--accent2);}
+.btn.ghost{background:transparent;}
+.btn.small{padding:5px 8px; font-size:11.5px; width:auto;}
+.btn:disabled{opacity:.4; cursor:not-allowed;}
+.btn-row{display:flex; gap:6px;}
+.btn-row .btn{flex:1;}
+
+.filter-row{
+  display:flex; align-items:center; gap:8px; padding:7px 0;
+}
+.filter-item{border-bottom:1px solid var(--line);}
+.filter-item:last-child{border-bottom:none;}
+.filter-item.dragging{opacity:.35;}
+.filter-item.drag-over-top{box-shadow:inset 0 2px 0 var(--accent);}
+.filter-item.drag-over-bottom{box-shadow:inset 0 -2px 0 var(--accent);}
+.filter-row .drag-handle{
+  flex:0 0 auto; width:16px; text-align:center; color:var(--muted); font-size:13px;
+  cursor:grab; user-select:none; letter-spacing:-2px;
+}
+.filter-row .drag-handle.disabled{opacity:.25; cursor:default;}
+.filter-row .fname{width:56px; font-family:var(--mono); font-size:11.5px; color:var(--accent2); font-weight:600;}
+.filter-row .fdesc{flex:1; font-size:11px; color:var(--muted);}
+.filter-row input[type=number]{width:72px; flex:0 0 auto;}
+.filter-row input[type=checkbox]{accent-color:var(--accent); width:15px; height:15px; flex:0 0 auto;}
+.filter-row .draw-btn{flex:0 0 auto; width:auto; padding:4px 8px; font-size:10.5px;}
+.filter-order-toggle{
+  display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:8px;
+  background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius); font-size:12px;
+}
+.filter-order-toggle input[type=checkbox]{accent-color:var(--accent); width:15px; height:15px; flex:0 0 auto;}
+
+.chk-list{max-height:170px; overflow-y:auto; border:1px solid var(--line); border-radius:var(--radius); padding:6px 8px;}
+.chk-item{display:flex; align-items:center; gap:7px; padding:4px 0; font-size:12px;}
+.chk-item input{accent-color:var(--accent);}
+
+.badge{
+  display:inline-block; padding:2px 7px; border-radius:20px; font-size:10.5px;
+  background:var(--panel2); border:1px solid var(--line); color:var(--muted);
+}
+.badge.ok{color:var(--accent2); border-color:var(--accent);}
+.hint{font-size:11px; color:var(--muted2); margin-top:4px; line-height:1.5;}
+.stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; font-family:var(--mono); font-size:12px;}
+.stat-grid .k{color:var(--muted);}
+.stat-grid .v{color:var(--text); text-align:right;}
+a.link{color:var(--accent2); text-decoration:none; cursor:pointer;}
+a.link:hover{text-decoration:underline;}
+#toast{
+  position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
+  background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  padding:9px 16px; border-radius:var(--radius); font-size:12.5px; z-index:999;
+  box-shadow:0 6px 24px rgba(0,0,0,.35); opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  max-width:520px;
+}
+#toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+#toast.err{border-color:var(--rust); color:#f0b39c;}
+
+/* ---------- map area ---------- */
+#mapwrap{flex:1; position:relative; min-width:0;}
+#map{position:absolute; inset:0; background:#0b0c08;}
+#legend{
+  position:absolute; right:14px; bottom:34px; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:10px 12px; z-index:500; min-width:150px;
+  box-shadow:0 6px 20px rgba(0,0,0,.3);
+}
+#legend h4{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 6px;}
+#legendBar{height:10px; border-radius:2px; background:linear-gradient(90deg,#c0392b,#e2b93b,#3fae4c);}
+#legendLabels{display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-top:4px;}
+#drawToolbar{
+  display:none; position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:600;
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:8px 10px; align-items:center; gap:8px; box-shadow:0 6px 20px rgba(0,0,0,.3); font-size:12px;
+}
+#drawToolbar .btn{width:auto; margin-top:0;}
+#attrSelectWrap{
+  position:absolute; left:14px; top:14px; z-index:500; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:8px 10px; box-shadow:0 6px 20px rgba(0,0,0,.3);
+}
+#attrSelectWrap label{font-size:10.5px; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:4px;}
+#attrSelect{min-width:170px;}
+#basemapSelectWrap{
+  position:absolute; right:14px; top:14px; z-index:500; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:8px 10px; box-shadow:0 6px 20px rgba(0,0,0,.3);
+}
+#basemapSelectWrap label{font-size:10.5px; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:4px;}
+#basemapSelect{min-width:190px;}
+
+#statusbar{
+  flex:0 0 auto; background:var(--panel); border-top:1px solid var(--line); padding:6px 16px;
+  display:flex; gap:18px; align-items:center; font-family:var(--mono); font-size:11.5px; color:var(--muted);
+}
+#statusbar b{color:var(--text); font-weight:600;}
+#statusbar .dot{width:6px; height:6px; border-radius:50%; background:var(--muted2);}
+#statusbar .dot.on{background:var(--accent);}
+
+/* leaflet popup theming */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip{background:var(--panel); color:var(--text); border:1px solid var(--line);}
+.leaflet-popup-content{font-family:var(--mono); font-size:11.5px; margin:9px 11px;}
+.leaflet-popup-content b{color:var(--accent2);}
+.leaflet-bar a{background:var(--panel); color:var(--text); border-color:var(--line) !important;}
+.leaflet-bar a:hover{background:var(--panel2);}
+.leaflet-control-attribution{background:rgba(20,23,15,.75) !important; color:var(--muted) !important;}
+.leaflet-control-attribution a{color:var(--muted) !important;}
+
+::-webkit-scrollbar{width:9px; height:9px;}
+::-webkit-scrollbar-track{background:var(--panel);}
+::-webkit-scrollbar-thumb{background:var(--line); border-radius:5px;}
+
+.help-block p{font-size:12px; line-height:1.65; color:var(--text); margin:0 0 10px;}
+.help-block p:last-child{margin-bottom:0;}
+.help-block code{background:var(--panel2); padding:1px 5px; border-radius:var(--radius); font-family:var(--mono); font-size:11.5px;}
+
+.mapping-grid{display:grid; grid-template-columns:1fr 1.3fr; gap:6px 10px; align-items:center; font-size:12px;}
+.mapping-grid .rname{color:var(--muted); font-size:11.5px;}
+textarea.summaryPreview{
+  width:100%; height:160px; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  font-family:var(--mono); font-size:11px; padding:8px; border-radius:var(--radius); resize:vertical;
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<div id="topbar">
+  <div id="brand">
+    <span class="mark"></span>
+    <h1>Yield Editor Pro</h1>
+    <span class="tag">Web</span>
+  </div>
+  <div class="spacer"></div>
+  <button class="tbtn" id="btnSaveSession" title="Save session settings (.json)">Save Session</button>
+  <label class="tbtn" title="Load session settings (.json)">Load Session
+    <input type="file" id="loadSessionInput" accept=".json,.yesession" style="display:none;">
+  </label>
+  <button class="tbtn" id="themeToggle" title="Toggle theme">◐</button>
+</div>
+
+<div id="body">
+  <div id="sidebar">
+    <div id="tabs">
+      <button class="tabbtn active" data-tab="import">Import</button>
+      <button class="tabbtn" data-tab="balance">Balance</button>
+      <button class="tabbtn" data-tab="filters">Filters</button>
+      <button class="tabbtn" data-tab="postcal">Post-Cal</button>
+      <button class="tabbtn" data-tab="boundary">Boundary</button>
+      <button class="tabbtn" data-tab="export">Export</button>
+      <button class="tabbtn" data-tab="summary">Summary</button>
+      <button class="tabbtn" data-tab="help">Help</button>
+    </div>
+    <div id="panels">
+      <!-- ============ IMPORT ============ -->
+      <div class="panel active" id="panel-import">
+        <div class="section">
+          <h3>Load yield data</h3>
+          <div class="field">
+            <label>AgLeader Advanced Text (.txt) — official 17-column schema, no header row</label>
+            <input type="file" id="fileAgLeader" accept=".txt,.csv,.dat">
+          </div>
+          <div class="field">
+            <label>Delimited (CSV / TXT / DAT) — any monitor export with a header row</label>
+            <input type="file" id="fileCsv" accept=".csv,.txt,.dat">
+          </div>
+          <div class="field">
+            <label>GeoJSON — points or polygons</label>
+            <input type="file" id="fileGeojson" accept=".geojson,.json">
+          </div>
+          <div class="field">
+            <label>ESRI Shapefile — points or polygons (.zip, or select the unzipped .shp + .dbf + .shx + .prj together)</label>
+            <input type="file" id="fileShapefile" accept=".zip,.shp,.dbf,.shx,.prj" multiple>
+          </div>
+          <div class="hint">Column roles are auto-detected from common monitor naming (JD Ops Center, FieldView, AgLeader/SMS, generic). Review under <b>Column Mapping</b> below. Polygon inputs — as-harvested yield-cell files, zone/management-area files — import one row per polygon; the real footprint is kept for the map and for GeoJSON/Shapefile export, while filtering, balancing, and GeoTIFF interpolation use each polygon's centroid.</div>
+        </div>
+        <div class="section" id="importStatusSection" style="display:none;">
+          <h3>Loaded file</h3>
+          <div class="stat-grid">
+            <div class="k">File</div><div class="v" id="stFile">—</div>
+            <div class="k">Format</div><div class="v" id="stFormat">—</div>
+            <div class="k">Records</div><div class="v" id="stRecords">—</div>
+            <div class="k">Columns</div><div class="v" id="stColumns">—</div>
+          </div>
+        </div>
+        <div class="section" id="mappingSection" style="display:none;">
+          <h3>Column mapping</h3>
+          <div class="mapping-grid" id="mappingGrid"></div>
+          <div class="field row" id="primaryYieldRow" style="margin-top:10px; display:none; align-items:center; gap:14px;">
+            <label style="flex:0 0 auto; font-weight:600;">Use for filtering &amp; outlier detection:</label>
+            <label style="flex:0 0 auto; font-weight:400;"><input type="radio" name="primaryYield" id="primaryYieldDry" value="dry"> Dry/Processed</label>
+            <label style="flex:0 0 auto; font-weight:400;"><input type="radio" name="primaryYield" id="primaryYieldWet" value="wet"> Wet/Unprocessed</label>
+          </div>
+          <div class="hint">Map a <b>Dry/Processed Yield</b> column if your monitor already outputs a per-area yield rate (e.g. bu/ac, kg/ha) — this is what most yield maps use. Map a <b>Wet/Unprocessed Yield</b> column if it also (or instead) logs the raw as-harvested signal, which on some platforms is a flow rate (lbs/sec, tons/sec) rather than a per-area rate. Either or both may be left unmapped, but at least one is required. Threshold-style filters (Max/Min/Std.-dev Yield) and Post-Cal's per-acre targets are judged against whichever one is selected above as primary — the other mapped column still passes through every row-removal filter and the grain-flow-delay shift, so a cleaned version of it is produced either way. Total Wet / Wet Yield Avg/ac under Post-Cal are only enabled once a Wet/Unprocessed Yield column is mapped.</div>
+          <div class="field" style="margin-top:10px;">
+            <label>Source units (used only when exporting to AgLeader Text)</label>
+            <div class="row">
+              <select id="unitYield"></select>
+              <select id="unitVelocity"></select>
+            </div>
+            <div class="row" style="margin-top:6px;">
+              <select id="unitSwath"></select>
+              <select id="unitAltitude"></select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ BALANCE ============ -->
+      <div class="panel" id="panel-balance">
+        <div class="section">
+          <h3>Balancing</h3>
+          <div class="hint">Machine and date differences are usually a calibration issue, not real yield variation — balance them out here, before the Filters tab, so filters like Std. Deviation of Yield judge the corrected values rather than the raw ones.</div>
+        </div>
+        <div class="section">
+          <h3>Date balancing</h3>
+          <div class="field row">
+            <label style="flex:0 0 auto; width:70px;"><input type="checkbox" id="balDateEnabled"> Enable</label>
+            <select id="balDateBase"></select>
+          </div>
+          <div class="hint">Scales each harvest date's mean yield to match the base date (mean-ratio scaling).</div>
+        </div>
+        <div class="section">
+          <h3>Machine balancing</h3>
+          <div class="field row">
+            <label style="flex:0 0 auto; width:70px;"><input type="checkbox" id="balMachineEnabled"> Enable</label>
+            <select id="balMachineBase"></select>
+          </div>
+          <div class="hint">Scales each machine's mean yield to match the base machine. Applied after date balancing if both are enabled.</div>
+        </div>
+        <div class="section">
+          <h3>Moisture balancing</h3>
+          <div class="field row">
+            <label style="flex:0 0 auto; width:70px;"><input type="checkbox" id="balMoistureEnabled"> Enable</label>
+            <select id="balMoistureBase"></select>
+          </div>
+          <div class="hint">For when two machines' <b>moisture meters</b> — not their yield sensors — disagree. Computes the scaling factor from the ratio of each machine's average moisture reading to the base machine's, then applies that factor to yield. Requires a mapped Machine ID and Moisture column. Applied after date and machine balancing if more than one is enabled.</div>
+        </div>
+        <button class="btn primary" id="btnApplyBalance">Apply Balancing</button>
+      </div>
+
+      <!-- ============ FILTERS ============ -->
+      <div class="panel" id="panel-filters">
+        <div class="section">
+          <h3>USDA Yield Editor filters</h3>
+          <label class="filter-order-toggle">
+            <input type="checkbox" id="customFilterOrderEnabled">
+            <span>Apply filters in the order listed below (drag <span style="letter-spacing:-2px;">⋮⋮</span> to reorder) — unchecked uses the traditional fixed USDA Yield Editor order regardless of how the list is arranged.</span>
+          </label>
+          <div id="filterList"></div>
+        </div>
+        <button class="btn primary" id="btnApplyFilters">Apply All Filters</button>
+        <div class="hint" id="filterResultHint"></div>
+      </div>
+
+      <!-- ============ POST-CAL ============ -->
+      <div class="panel" id="panel-postcal">
+        <div class="section">
+          <h3>Post-harvest calibration</h3>
+          <div class="hint">Scale the final yield to match a known scale-ticket, elevator receipt, or weigh-wagon total. Runs last — after filters and all balancing — and applies a single factor to the whole dataset. Fill in any one of the four fields below; leave the rest blank. If more than one is filled in, the resulting factors are averaged.</div>
+          <div class="field row" style="margin-top:8px;">
+            <label style="flex:0 0 auto; width:70px;"><input type="checkbox" id="pcEnabled"> Enable</label>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Wet (as-harvested) basis</h3>
+          <div class="field">
+            <label>Total Wet — whole-field production, in your yield unit (lbs, bu, tons, etc.)</label>
+            <input type="number" id="pcTotalWet" step="any" placeholder="requires a mapped Wet/Unprocessed Yield column" disabled>
+          </div>
+          <div class="field">
+            <label>Wet Yield Avg/ac — e.g. bu/ac, ton/ac</label>
+            <input type="number" id="pcWetAvg" step="any" placeholder="requires a mapped Wet/Unprocessed Yield column" disabled>
+          </div>
+          <div class="hint">Both fields require a mapped Wet/Unprocessed Yield column (Import ▸ Column mapping) — disabled otherwise. Total Wet additionally needs either an imported field boundary or a mapped Swath width + Velocity so acres can be estimated. Wet Yield Avg/ac needs no extra data beyond the mapped column.</div>
+        </div>
+        <div class="section">
+          <h3>Dry-matter basis</h3>
+          <div class="field">
+            <label>Total Dry — whole-field, dry-matter weight</label>
+            <input type="number" id="pcTotalDry" step="any" placeholder="e.g. 4200">
+          </div>
+          <div class="field">
+            <label>Dry Yield Avg/ac</label>
+            <input type="number" id="pcDryAvg" step="any" placeholder="e.g. 162.8">
+          </div>
+          <div class="hint">If a Dry/Processed Yield column is mapped, these compare directly against it. Otherwise they're derived from Wet Yield × (100 − average Moisture%) / 100, which needs both a mapped Wet/Unprocessed Yield column and a mapped Moisture column. Total Dry additionally needs acres (boundary, or Swath width + Velocity).</div>
+        </div>
+        <button class="btn primary" id="btnApplyPostCal">Apply Calibration</button>
+        <div class="hint" id="postCalResultHint"></div>
+      </div>
+
+      <!-- ============ BOUNDARY ============ -->
+      <div class="panel" id="panel-boundary">
+        <div class="section">
+          <h3>Field boundary</h3>
+          <div class="field">
+            <label>Import boundary — GeoJSON, zipped Shapefile (.zip), or unzipped .shp + .dbf + .shx + .prj</label>
+            <input type="file" id="fileBoundary" accept=".geojson,.json,.zip,.shp,.dbf,.shx,.prj" multiple>
+          </div>
+          <div class="stat-grid">
+            <div class="k">Loaded</div><div class="v" id="stBoundary">none</div>
+            <div class="k">Area</div><div class="v" id="stBoundaryArea">—</div>
+          </div>
+          <button class="btn ghost" id="btnClearBoundary">Clear boundary</button>
+          <div class="hint">A boundary is required for the clipped GeoTIFF export. It's also drawn on the map for reference.</div>
+        </div>
+      </div>
+
+      <!-- ============ EXPORT ============ -->
+      <div class="panel" id="panel-export">
+        <div class="section">
+          <h3>Output file name</h3>
+          <div class="field">
+            <label>Base name for exported files (optional)</label>
+            <input type="text" id="outputNameInput" placeholder="leave blank to use the source file name">
+          </div>
+          <div class="hint">Applied to all exports below (CSV, GeoJSON, Shapefile, AgLeader Text, GeoTIFF). Keep it short — very long file names inside a .zip can fail to extract on Windows without manually renaming first.</div>
+        </div>
+        <div class="section">
+          <h3>Column set</h3>
+          <div class="field">
+            <label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; cursor:pointer;">
+              <input type="radio" name="exportColMode" id="exportModeFull" value="full" checked style="margin-top:2px;">
+              <span><b>Full</b> — every original column plus whichever cleaned columns exist (<code>yield_balanced</code>, <code>yield_dry_clean</code>, <code>yield_wet_clean</code>, <code>moisture_clean</code>, balance/postcal factors).</span>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+              <input type="radio" name="exportColMode" id="exportModeStreamlined" value="streamlined" style="margin-top:2px;">
+              <span><b>Streamlined</b> — only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names, so the exported file's structure closely resembles the source file's.</span>
+            </label>
+          </div>
+          <div class="hint">Applies to GeoJSON, Shapefile, and CSV point-data exports below. AgLeader Text always uses its own fixed field schema.</div>
+        </div>
+        <div class="section">
+          <h3>Point data</h3>
+          <div class="btn-row">
+            <button class="btn" id="btnExportGeojson">GeoJSON</button>
+            <button class="btn" id="btnExportShapefile">Shapefile (.zip)</button>
+          </div>
+          <div class="btn-row" style="margin-top:6px;">
+            <button class="btn" id="btnExportCsv">CSV</button>
+            <button class="btn" id="btnExportAgLeader">AgLeader Text</button>
+          </div>
+          <div class="hint">Exports use the current filtered/balanced dataset. Balanced yield exports under <code>yield_balanced</code> when balancing is enabled.</div>
+        </div>
+        <div class="section">
+          <h3>GeoTIFF raster (clipped to boundary)</h3>
+          <div class="field">
+            <label>Attributes to interpolate (select one or more)</label>
+            <div class="chk-list" id="geotiffAttrList"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Cell size (m)</label><input type="number" id="gtCellSize" value="10" min="1"></div>
+            <div class="field">
+              <label>Interpolation method</label>
+              <select id="gtMethod">
+                <option value="idw">Inverse Distance Weighting (IDW)</option>
+                <option value="kriging">Ordinary Kriging</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field" id="gtPowerField"><label>IDW power</label><input type="number" id="gtPower" value="2" min="1" max="5" step="0.5"></div>
+            <div class="field" id="gtRangeField" style="display:none;"><label>Kriging range (m, optional)</label><input type="number" id="gtRange" min="0" placeholder="auto from data"></div>
+          </div>
+          <button class="btn primary" id="btnExportGeotiff" disabled>Export GeoTIFF</button>
+          <div class="hint" id="geotiffHint">Import a boundary first — the raster grid and nodata mask are clipped to it.</div>
+        </div>
+      </div>
+
+      <!-- ============ SUMMARY ============ -->
+      <div class="panel" id="panel-summary">
+        <div class="section">
+          <h3>Session summary</h3>
+          <div class="hint">Captures the source file, column mapping, every filter stage's record count, balancing factors, boundary, and any GeoTIFF exports made this session.</div>
+          <div class="btn-row" style="margin-top:8px;">
+            <button class="btn primary" id="btnSummaryMd">Download .md</button>
+            <button class="btn primary" id="btnSummaryHtml">Download .html</button>
+          </div>
+          <div class="field" style="margin-top:10px;">
+            <label>Preview</label>
+            <textarea class="summaryPreview" id="summaryPreview" readonly></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ HELP ============ -->
+      <div class="panel" id="panel-help">
+        <div class="section help-block">
+          <h3>About this tool</h3>
+          <p>Yield Editor Pro Web is a single, self-contained HTML file for cleaning up combine yield-monitor data: import a raw yield file, correct machine/date/moisture calibration drift, run it through a configurable filter set to drop bad points, true it up to a known scale-ticket total, and export the cleaned result as CSV, GeoJSON, Shapefile, AgLeader Text, or an interpolated GeoTIFF raster — all in the browser, with nothing uploaded anywhere. It's aimed at the same job the original desktop Yield Editor does, with a filter/balance/calibrate pipeline, a web map for drawing selections, and session save/load, in a form that needs no installer and runs on anything with a modern browser.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Workflow</h3>
+          <p>The tabs run roughly in the order you'd use them: <b>Import</b> your data and map its columns, then <b>Balance</b> out machine/date/moisture calibration differences, then run <b>Filters</b> to drop bad points, then <b>Post-Cal</b> to true the result up to a known scale total, then optionally load a <b>Boundary</b>, then <b>Export</b> and review the <b>Summary</b>. Re-running any tab's Apply button always recomputes the whole pipeline in that order — you don't need to reapply earlier tabs after changing a later one.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Import &amp; column mapping</h3>
+          <p>Accepts AgLeader Advanced Text, any delimited CSV/TXT/DAT with a header row, GeoJSON, and Shapefiles (zipped or as loose .shp/.dbf/.shx/.prj). Column roles are auto-detected from common monitor naming and can be corrected under <b>Column mapping</b>. Timestamp and Machine ID drive most of the rest of the tool — Timestamp is required for date balancing, pass detection, and the seconds-based start/end delay filters; Machine ID is required for machine and moisture balancing.</p>
+          <p><b>Dry/Processed Yield</b> and <b>Wet/Unprocessed Yield</b> are separate, both-optional mappings (at least one is required). Map Dry/Processed if your monitor outputs a per-area yield rate (bu/ac, kg/ha, etc.) — most yield maps use this. Map Wet/Unprocessed if it also (or instead) logs the raw as-harvested signal — on some platforms that's a per-area rate too, but on others it's a flow rate (lbs/sec, tons/sec) that the monitor itself converts into the per-area Dry figure. Whichever one you mark as <b>primary</b> (a choice that appears once at least one is mapped) is what threshold filters (Max/Min/Std.-dev Yield) and pass/outlier detection are judged against; the other still rides along through every row-removal filter and the grain-flow-delay shift, producing its own cleaned attribute (see Filters, below).</p>
+          <p>Polygon inputs (as-harvested yield-cell files, management-zone files) import one row per polygon. The real footprint is kept for the map and for GeoJSON/Shapefile export; filtering, balancing, and GeoTIFF interpolation use each polygon's centroid.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Passes</h3>
+          <p>Before anything else runs, points are grouped into combine passes automatically — by a gap in time, or a jump in position too large for the reported ground speed to explain. If a Machine ID column is mapped, grouping is done separately per machine first, so a file that interleaves multiple machines' records by timestamp doesn't read as one machine teleporting to another's position. Pass grouping is what the Start/End Pass Delay filters (both the observation-count and the seconds versions) and the Smooth Velocity filter key off of.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Balance</h3>
+          <p><b>Date balancing</b> and <b>machine balancing</b> each scale a group's mean yield to match a base group you pick (mean-ratio scaling) — useful when harvest conditions or a monitor's calibration drifted across days, or when one combine in a fleet reads consistently high or low. Both operate on the primary yield column only.</p>
+          <p><b>Moisture balancing</b> is different: it computes its scaling factor from the ratio of average <i>moisture</i> readings between machines, not average yield, then applies that factor to yield. Use it when you believe two machines' yield means genuinely differ for real agronomic reasons, but one machine's moisture meter is separately out of calibration — scaling by the yield ratio directly would erase real field variation along with the sensor error, while scaling by the moisture ratio targets the sensor issue specifically. Requires Machine ID and Moisture mapped.</p>
+          <p>All three balancing options write to a shared <code>yield_balanced</code> column and can be chained — date, then machine, then moisture, in that order, whichever are enabled. Filters and Post-Cal that follow use this balanced column automatically once it exists.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Filters</h3>
+          <p>The USDA Yield Editor's standard filter set, each optional and independently configurable. By default all enabled filters are applied in the traditional fixed order the USDA Yield Editor uses them in, regardless of how the list below is arranged — this is the "bulk" method. Check <b>"Apply filters in the order listed below"</b> to instead run them in whatever order you drag the rows into (grab the <code>⋮⋮</code> handle on the left of each row) — useful when the order genuinely changes the result, e.g. running Position/Manual-selection before a Std.-deviation-of-yield filter so outliers inside a hand-drawn zone don't skew the mean used to judge the rest of the field. Every row-removal filter (everything except Grain flow delay) drops the same rows regardless of which yield column is primary — the non-primary yield column and Moisture simply lose those rows too, since a whole record is removed at once, not one column at a time.</p>
+          <p><b>Grain flow delay</b> shifts yield readings by N observations to correct for the lag between grain entering the header and reaching the flow sensor. Since this is a re-index rather than a value threshold, it's applied to the primary yield column, the non-primary yield column (if mapped), and Moisture together, using the same N-observation shift for all three — they share one auger, so one sensor-lag correction is physically valid for all of them. <b>Start/End Pass Delay</b> drop the first/last N observations of every pass, to cut out header-raising/lowering transients — measured in observation count. <b>Start/End Pass Delay (sec)</b> do the same thing but measured in seconds elapsed from the true start or end of the pass (using the full pass, unaffected by whatever earlier filters have already removed), for monitors that don't log at a steady rate. You can enable either version, both, or neither for start and end independently.</p>
+          <p><b>Maximum/Minimum velocity</b> drop points outside a ground-speed range. <b>Smooth velocity</b> drops a point if its speed changed by more than the given fraction from the previous point in the same pass — catches jerky GPS/speed readings. <b>Minimum swath</b> drops points where active header width fell below a threshold (partial-width passes). <b>Maximum/Minimum yield</b> and <b>Std. deviation of yield</b> are judged against the primary yield column only — a threshold entered for one unit system (e.g. bu/ac) wouldn't mean anything applied to a flow rate in the other. <b>Position (bounding box)</b> and <b>Manual selection</b> use shapes you draw on the map — Position keeps only points inside a box, Manual selection excludes points inside one or more drawn polygons.</p>
+          <p>Once filtering finishes, whichever of Dry/Processed and Wet/Unprocessed yield are mapped are copied out as <code>yield_dry_clean</code> / <code>yield_wet_clean</code>, alongside <code>moisture_clean</code> if Moisture is mapped — three explicitly-named, filtered (and delay-corrected) attributes for platforms that want the wet + dry + moisture trio to build their own yield maps. The hint line below "Apply All Filters" shows the running record count after each enabled stage, in order, so you can see which filter is removing how much data.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Post-Cal (post-harvest calibration)</h3>
+          <p>A final, single-factor scale applied to the whole dataset after everything else, to true it up to a real-world total — a scale ticket, elevator receipt, or weigh-wagon reading. Enter any one of four target values (or several, in which case the resulting factors are averaged):</p>
+          <p><b>Wet Yield Avg/ac</b> and <b>Total Wet</b> require a mapped Wet/Unprocessed Yield column — the two fields are disabled otherwise. Wet Yield Avg/ac is compared directly to its (filtered) mean; Total Wet additionally needs acres, taken from an imported boundary if you have one, or estimated from Swath width × Velocity assuming roughly one reading per second. <b>Dry Yield Avg/ac</b> and <b>Total Dry</b> compare directly against a mapped Dry/Processed Yield column when one exists — otherwise they're derived from Wet Yield × (100 − average Moisture%) / 100, which needs both Wet/Unprocessed Yield and Moisture mapped. Total Dry, either way, additionally needs acres the same way Total Wet does.</p>
+          <p>The resulting factor is applied to the primary yield column (into <code>yield_balanced</code>) and, to keep the trio consistent, to whichever of <code>yield_dry_clean</code>/<code>yield_wet_clean</code> isn't already the primary — Moisture itself is never rescaled.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Boundary &amp; GeoTIFF export</h3>
+          <p>Import a field boundary (GeoJSON or Shapefile) to draw it on the map, clip the GeoTIFF raster export to it, and — once Post-Cal is looking for acres — supply the field area. GeoTIFF export interpolates your chosen attribute(s) onto a grid using either <b>Inverse Distance Weighting (IDW)</b> or <b>Ordinary Kriging</b>, selectable per export; cells outside the boundary are masked as nodata (-9999). IDW weights nearby points purely by distance (tune with the power slider — higher power favours the closest points more strongly). Ordinary Kriging instead weights points by a fitted spatial-covariance model (a spherical semivariogram whose sill/nugget are estimated from the data's variance and whose range defaults to 30% of the point cloud's extent, or a distance you enter yourself) — it tends to produce a smoother, statistically-weighted surface but costs more to compute. Smaller cell sizes, higher IDW power, and Kriging in general all increase processing time.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Export &amp; Summary</h3>
+          <p>CSV, GeoJSON, and Shapefile exports respect the <b>Column set</b> choice at the top of the Export tab. <b>Full</b> (the previous default behaviour) includes every original column plus whichever cleaned columns exist — wherever balancing or Post-Cal produced a <code>yield_balanced</code> column, and wherever <code>yield_dry_clean</code>/<code>yield_wet_clean</code>/<code>moisture_clean</code> exist, they're included alongside the original columns. <b>Streamlined</b> instead exports only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names (plus position) — so the output file's structure closely mirrors the source file's, just with cleaned values in place, for platforms that expect to see familiar headers rather than the <code>_clean</code>-suffixed names. AgLeader Text export always uses its own fixed field schema regardless of this setting, and prefers an actual mapped Wet/Unprocessed Yield value for its Grain_Flow_lbs_sec field over back-calculating one from the per-acre Dry figure, when one is available. The Summary tab captures the source file, column mapping (including which yield column is primary), every pipeline stage's record count, all balancing and calibration factors, boundary status, and any GeoTIFF exports made in the session (including which interpolation method each used) — downloadable as Markdown or a standalone HTML file.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Sessions</h3>
+          <p><b>Save Session</b> (top bar) downloads your current column mapping, filters, balancing, and Post-Cal settings as a small JSON file — not the source data itself. <b>Load Session</b> restores those settings; re-import the original source file afterward (or first) to see results.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Attribution — USDA Yield Editor</h3>
+          <p>The filter/balance/calibrate workflow and terminology in this tool — Start/End Pass Delay, Grain Flow Delay, Smooth Velocity, Std. Deviation of Yield, and the rest of the filter set — follow the original <b>Yield Editor</b> desktop software developed by USDA's Agricultural Research Service (ARS), Cropping Systems and Water Quality Research Unit, Columbia, Missouri, as part of its precision-agriculture research program. This project is a separate, independent web reimplementation built to work from a browser with no install — it is not official USDA software and is not endorsed by or affiliated with USDA/ARS.</p>
+          <p>Official USDA Yield Editor download and documentation: <a href="https://www.ars.usda.gov/research/software/download/?softwareid=370&amp;modecode=50-70-10-00" target="_blank" rel="noopener">ars.usda.gov — Yield Editor</a>. As software produced by the U.S. federal government, the original Yield Editor is generally in the public domain within the United States; see the disclaimer bundled with that official download for its exact terms, and credit "USDA-ARS Yield Editor" when referencing the underlying methodology.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Developer &amp; contact</h3>
+          <p>This web version was built by <b>Cory Weber</b> (Cory Weber Ag Tech), developed with the assistance of Claude (Anthropic). For questions, bug reports, or feature requests, contact <a href="mailto:coryweber1988@gmail.com">coryweber1988@gmail.com</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div id="basemapSelectWrap">
+      <label>Background map</label>
+      <select id="basemapSelect"></select>
+    </div>
+    <div id="drawToolbar">
+      <span id="drawToolbarLabel"></span>
+      <button type="button" class="btn small" id="btnFinishDraw" style="display:none;">Finish polygon</button>
+      <button type="button" class="btn small ghost" id="btnCancelDraw">Cancel</button>
+    </div>
+    <div id="attrSelectWrap">
+      <label>Colour map by</label>
+      <select id="attrSelect"></select>
+    </div>
+    <div id="legend">
+      <h4 id="legendTitle">Yield</h4>
+      <div id="legendBar"></div>
+      <div id="legendLabels"><span id="legendMin">—</span><span id="legendMax">—</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span><span class="dot" id="dotData"></span> <b id="sbRecords">0</b> records loaded</span>
+  <span><span class="dot" id="dotFilter"></span> <b id="sbFiltered">0</b> after filters/balance</span>
+  <span><span class="dot" id="dotBoundary"></span> boundary: <b id="sbBoundary">none</b></span>
+  <span style="flex:1;"></span>
+  <span id="sbMsg"></span>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.6.0/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/shpjs/6.2.0/shp.min.js"></script>
+
+<script>
+/* ===== core.js ===== */
+/* ============================================================
+   Yield Editor Pro — Web  |  core.js
+   Pure data-processing functions: parsing, column detection,
+   filters, transect/pass detection, balancing.
+   No DOM / Leaflet references in this file — kept testable.
+   ============================================================ */
+
+const COLUMN_ALIASES = {
+  latitude:  ["latitude","lat","y_coord","northing"],
+  longitude: ["longitude","lon","long","x_coord","easting"],
+  yieldDry:  ["yield","yld","dry_yield","dry_yld","grain_yield","yield_vol","yld_vol_dr","yld_mass_d","dry_vol",
+              "dryyield","drymassyld","harv_vol","vriedyield","yieldvol","yield_bu",
+              "yield_ac","harvestyld","grnyield","applied","drymass","massdry",
+              "yld_bu_ac","yieldmass","yld_kg_ha","yield_kg","prod","productivity",
+              "bu_ac","bu_acre","t_ha",
+              "vryieldvol","vryieldmass","vryield"], // JD Ops Center (dbf-truncated)
+  yieldWet:  ["wet_yield","wet_yld","wetyield","wetmass","wet_mass","mass_flow",
+              "grain_flow","flow_rate","yield_lbs","raw_yield","raw_yld"],
+  velocity:  ["speed","velocity","vel","gnd_spd","ground_speed",
+              "vehiclspee","vehiclspeed","vehiclespeed","vehspeed"], // JD Ops Center (dbf name-length variants)
+  swath:     ["swath","swath_width","header_width","width","swathwidth"],
+  moisture:  ["moisture","moist","grain_moisture"],
+  timestamp: ["isotime","iso_time","gps_time","timestamp","date_time","datetime",
+              "time","harvest_date","date"],
+  machine:   ["machine","machine_id","combine","combine_id","vehicle","vehicle_id",
+              "equipment","serial","serial_no"],
+};
+
+function normColName(c){
+  return String(c).toLowerCase().trim().replace(/\s+/g,"_");
+}
+
+function detectColumn(columns, role){
+  // Alias-list order = priority order, so more specific/reliable field names
+  // (e.g. an ISO timestamp) can be preferred over a same-role fallback,
+  // regardless of which column happens to appear first in the file.
+  const aliases = COLUMN_ALIASES[role] || [];
+  const byNorm = new Map();
+  for (const c of columns){ const n = normColName(c); if (!byNorm.has(n)) byNorm.set(n, c); }
+  for (const alias of aliases){
+    if (byNorm.has(alias)) return byNorm.get(alias);
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------
+   AgLeader Advanced Text (.txt) — official 17-column schema
+   --------------------------------------------------------------- */
+const AGL_COLS = [
+  "Longitude","Latitude","Grain_Flow_lbs_sec","GPS_Time","Logging_Interval",
+  "Distance","Swath_inches","Moisture","Header_Status","Pass","Monitor_Name",
+  "Field_ID","Load_ID","Grain_Type","GPS_Status","PDOP","Altitude_ft",
+];
+const GPS_EPOCH_OFFSET = 315964800; // seconds between Unix epoch and GPS epoch
+
+function parseAgLeaderText(text){
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const rows = [];
+  for (const line of lines){
+    const parts = line.split(",");
+    if (parts.length < 17) continue;
+    const r = {};
+    for (let i = 0; i < AGL_COLS.length; i++){
+      const raw = parts[i] !== undefined ? parts[i].trim() : "";
+      r[AGL_COLS[i]] = raw;
+    }
+    // numeric coercion
+    r.Longitude = parseFloat(r.Longitude);
+    r.Latitude = parseFloat(r.Latitude);
+    r.Grain_Flow_lbs_sec = parseFloat(r.Grain_Flow_lbs_sec);
+    r.GPS_Time = parseInt(r.GPS_Time, 10);
+    r.Logging_Interval = parseInt(r.Logging_Interval, 10) || 1;
+    r.Distance = parseFloat(r.Distance);
+    r.Swath_inches = parseFloat(r.Swath_inches);
+    r.Moisture = parseFloat(r.Moisture);
+    r.Header_Status = parseInt(r.Header_Status, 10);
+    r.Pass = parseInt(r.Pass, 10);
+    r.GPS_Status = parseInt(r.GPS_Status, 10);
+    r.PDOP = parseFloat(r.PDOP);
+    r.Altitude_ft = parseFloat(r.Altitude_ft);
+
+    // derived columns (mirrors read_agleader in the desktop tool)
+    const unixTs = r.GPS_Time + GPS_EPOCH_OFFSET;
+    r.Timestamp = isFinite(unixTs) ? new Date(unixTs * 1000).toISOString() : "";
+    r.Speed_mph = isFinite(r.Distance) ? (r.Distance / 10) * 0.681818 : NaN; // ft/s*10 -> mph
+    r.Swath_ft = isFinite(r.Swath_inches) ? r.Swath_inches / 12 : NaN;
+    // back-calculate bu/ac: flow(lbs/s) * 3600 / (speed_mph*5280/3600 * swath_ft) ... use lbs/bu 56 default (corn)
+    const speedFtS = isFinite(r.Distance) ? r.Distance / 10 : NaN;
+    if (isFinite(r.Grain_Flow_lbs_sec) && isFinite(speedFtS) && speedFtS > 0 && isFinite(r.Swath_ft) && r.Swath_ft > 0){
+      const lbsPerBu = 56.0;
+      r.Yield_bu_ac = (r.Grain_Flow_lbs_sec * 43560) / (r.Swath_ft * speedFtS * lbsPerBu);
+    } else {
+      r.Yield_bu_ac = NaN;
+    }
+    rows.push(r);
+  }
+  return rows;
+}
+
+/* ---------------------------------------------------------------
+   Generic delimited text (CSV/TSV) — expects PapaParse output
+   already converted to array-of-objects with header row. This
+   function just coerces likely-numeric columns to numbers.
+   --------------------------------------------------------------- */
+function coerceNumeric(rows, columns){
+  const numericCols = new Set();
+  for (const col of columns){
+    let numericCount = 0, total = 0;
+    for (let i = 0; i < rows.length && i < 200; i++){
+      const v = rows[i][col];
+      if (v === undefined || v === null || v === "") continue;
+      total++;
+      if (!isNaN(parseFloat(v)) && isFinite(v)) numericCount++;
+    }
+    if (total > 0 && numericCount / total > 0.9) numericCols.add(col);
+  }
+  for (const row of rows){
+    for (const col of numericCols){
+      const v = row[col];
+      row[col] = (v === undefined || v === null || v === "") ? NaN : parseFloat(v);
+    }
+  }
+  return numericCols;
+}
+
+/* ---------------------------------------------------------------
+   Transect / pass detection (spatial + temporal gap detection),
+   mirrors compute_enhanced_fields() pass-id logic.
+   --------------------------------------------------------------- */
+function haversineFt(lat1, lon1, lat2, lon2){
+  const R = 20925721.8; // Earth radius in feet
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function parseTimestampToUnix(v){
+  if (v === undefined || v === null || v === "") return NaN;
+  if (typeof v === "number") return v > 1e12 ? v/1000 : v; // already epoch-ish
+  const t = Date.parse(v);
+  return isNaN(t) ? NaN : t / 1000;
+}
+
+function computeTransects(rows, lonCol, latCol, tsCol, velCol, machineCol){
+  const GAP_THRESHOLD = 5;     // seconds
+  const SPATIAL_THRESHOLD = 5; // x expected distance
+
+  // Group row indices by machine first (when a machine column is available),
+  // so gap/jump detection only ever compares a machine's own consecutive
+  // readings. Without this, a file that interleaves multiple machines'
+  // records by timestamp (a common "merged" export) reads as a constant
+  // teleport between machines and fragments into one fake pass per point.
+  let groups;
+  if (machineCol){
+    const byMachine = new Map();
+    for (let i = 0; i < rows.length; i++){
+      const m = rows[i][machineCol];
+      if (!byMachine.has(m)) byMachine.set(m, []);
+      byMachine.get(m).push(i);
+    }
+    groups = [...byMachine.values()];
+  } else {
+    groups = [rows.map((_, i) => i)];
+  }
+
+  let passId = 0;
+  for (const idxs of groups){
+    if (!idxs.length) continue;
+    passId++;
+    rows[idxs[0]].__transect = passId;
+    for (let k = 1; k < idxs.length; k++){
+      const i = idxs[k], p = idxs[k-1];
+      const lat1 = parseFloat(rows[p][latCol]), lon1 = parseFloat(rows[p][lonCol]);
+      const lat2 = parseFloat(rows[i][latCol]), lon2 = parseFloat(rows[i][lonCol]);
+      const distFt = (isFinite(lat1)&&isFinite(lon1)&&isFinite(lat2)&&isFinite(lon2))
+        ? haversineFt(lat1, lon1, lat2, lon2) : 0;
+      const tsI = tsCol ? parseTimestampToUnix(rows[i][tsCol]) : NaN;
+      const tsP = tsCol ? parseTimestampToUnix(rows[p][tsCol]) : NaN;
+      const dt = (isFinite(tsI) && isFinite(tsP)) ? (tsI - tsP) : NaN;
+      let speedFtS = NaN;
+      if (velCol){
+        const v = parseFloat(rows[p][velCol]);
+        if (isFinite(v)) speedFtS = v * 1.46667; // assume mph source -> ft/s
+      }
+      let newPass = false;
+      if (isFinite(dt) && dt > GAP_THRESHOLD) newPass = true;
+      if (!newPass && isFinite(speedFtS) && isFinite(dt) && speedFtS > 0){
+        const expDist = speedFtS * Math.abs(dt);
+        const ratio = expDist > 0 ? distFt / expDist : (distFt > 50 ? 999 : 0);
+        if (ratio > SPATIAL_THRESHOLD) newPass = true;
+      } else if (!newPass && !isFinite(dt) && distFt > 150){
+        // no timestamp/velocity available: fall back to a flat distance jump
+        newPass = true;
+      }
+      if (newPass) passId++;
+      rows[i].__transect = passId;
+    }
+  }
+
+  // Second pass: record each pass's [min,max] timestamp so time-based
+  // start/end delay filters can measure "seconds into the pass" without
+  // being thrown off by whatever subset of rows later filters leave behind.
+  if (tsCol){
+    const bounds = new Map(); // passId -> {min,max}
+    for (const r of rows){
+      const ts = parseTimestampToUnix(r[tsCol]);
+      if (!isFinite(ts)) continue;
+      const b = bounds.get(r.__transect);
+      if (!b) bounds.set(r.__transect, { min: ts, max: ts });
+      else { if (ts < b.min) b.min = ts; if (ts > b.max) b.max = ts; }
+    }
+    for (const r of rows){
+      const b = bounds.get(r.__transect);
+      if (b){ r.__passStartTs = b.min; r.__passEndTs = b.max; }
+    }
+  }
+  return rows;
+}
+
+/* ---------------------------------------------------------------
+   The 12 USDA Yield Editor filters. Each takes/returns an array
+   of row objects (row objects carry __transect from above).
+   --------------------------------------------------------------- */
+const Filters = {
+  DELAY(rows, yieldCol, delayObs, extraCols){
+    if (!delayObs) return rows;
+    const n = rows.length, shift = Math.trunc(delayObs);
+    const out = [];
+    for (let i = 0; i < n; i++){
+      const j = i + shift;
+      if (j < 0 || j >= n) continue;
+      const r = Object.assign({}, rows[i]);
+      r[yieldCol] = rows[j][yieldCol];
+      if (r[yieldCol] === undefined || r[yieldCol] === null || Number.isNaN(r[yieldCol])) continue;
+      // Same physical observation-index shift applied to any extra
+      // columns (a secondary wet/dry yield column, Moisture) — they ride
+      // along on the same combine at the same instant, so the same N-tick
+      // sensor lag correction is valid for all of them at once.
+      if (extraCols) for (const c of extraCols){ if (c) r[c] = rows[j][c]; }
+      out.push(r);
+    }
+    return out;
+  },
+  START(rows, nObs){
+    if (!nObs || nObs <= 0) return rows;
+    const counts = {};
+    return rows.filter(r => {
+      const t = r.__transect;
+      counts[t] = (counts[t] || 0) + 1;
+      return counts[t] > nObs;
+    });
+  },
+  END(rows, nObs){
+    if (!nObs || nObs <= 0) return rows;
+    const totals = {};
+    for (const r of rows) totals[r.__transect] = (totals[r.__transect] || 0) + 1;
+    const seen = {};
+    return rows.filter(r => {
+      const t = r.__transect;
+      seen[t] = (seen[t] || 0) + 1;
+      return (totals[t] - seen[t]) >= nObs;
+    });
+  },
+  // Time-based equivalents of START/END. Use the per-transect
+  // __passStartTs/__passEndTs stamped by computeTransects (based on the
+  // full pass, not whatever's survived earlier filter stages) plus each
+  // row's own timestamp to measure elapsed seconds into/until the pass.
+  // Rows with no usable timestamp are kept (can't judge their position).
+  STARTSEC(rows, tsCol, sec){
+    if (!tsCol || sec === null || sec === undefined || sec === "" || sec <= 0) return rows;
+    return rows.filter(r => {
+      const start = r.__passStartTs;
+      const ts = parseTimestampToUnix(r[tsCol]);
+      if (!isFinite(start) || !isFinite(ts)) return true;
+      return (ts - start) >= sec;
+    });
+  },
+  ENDSEC(rows, tsCol, sec){
+    if (!tsCol || sec === null || sec === undefined || sec === "" || sec <= 0) return rows;
+    return rows.filter(r => {
+      const end = r.__passEndTs;
+      const ts = parseTimestampToUnix(r[tsCol]);
+      if (!isFinite(end) || !isFinite(ts)) return true;
+      return (end - ts) >= sec;
+    });
+  },
+  MAXV(rows, velCol, maxv){
+    if (!velCol || maxv === null || maxv === undefined || maxv === "") return rows;
+    return rows.filter(r => parseFloat(r[velCol]) <= maxv);
+  },
+  MINV(rows, velCol, minv){
+    if (!velCol || minv === null || minv === undefined || minv === "") return rows;
+    return rows.filter(r => parseFloat(r[velCol]) >= minv);
+  },
+  SMV(rows, velCol, ratio){
+    if (!velCol || ratio === null || ratio === undefined || ratio === "") return rows;
+    // Compare each row to the previous row *within the same transect*, not
+    // the previous row in raw array order — a file that interleaves passes
+    // or machines by timestamp would otherwise compare unrelated readings.
+    const lastByTransect = new Map();
+    const out = [];
+    for (let i = 0; i < rows.length; i++){
+      const r = rows[i];
+      const prev = lastByTransect.get(r.__transect);
+      let keep = true;
+      if (prev){
+        const v = parseFloat(r[velCol]), pv = parseFloat(prev[velCol]);
+        const change = pv !== 0 ? Math.abs(v - pv) / Math.abs(pv) : NaN;
+        if (isFinite(change) && change > ratio) keep = false;
+      }
+      lastByTransect.set(r.__transect, r);
+      if (keep) out.push(r);
+    }
+    return out;
+  },
+  MINS(rows, swathCol, mins){
+    if (!swathCol || mins === null || mins === undefined || mins === "") return rows;
+    return rows.filter(r => parseFloat(r[swathCol]) >= mins);
+  },
+  MAXY(rows, yieldCol, maxy){
+    if (maxy === null || maxy === undefined || maxy === "") return rows;
+    return rows.filter(r => parseFloat(r[yieldCol]) <= maxy);
+  },
+  MINY(rows, yieldCol, miny){
+    if (miny === null || miny === undefined || miny === "") return rows;
+    return rows.filter(r => parseFloat(r[yieldCol]) >= miny);
+  },
+  STDY(rows, yieldCol, nStd){
+    if (nStd === null || nStd === undefined || nStd === "") return rows;
+    const vals = rows.map(r => parseFloat(r[yieldCol])).filter(isFinite);
+    if (!vals.length) return rows;
+    const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
+    const variance = vals.reduce((a,b)=>a+(b-mean)**2,0) / vals.length;
+    const std = Math.sqrt(variance);
+    const lo = mean - nStd*std, hi = mean + nStd*std;
+    return rows.filter(r => { const v = parseFloat(r[yieldCol]); return v >= lo && v <= hi; });
+  },
+  POS(rows, latCol, lonCol, bounds){
+    if (!bounds) return rows;
+    const { latMin, latMax, lonMin, lonMax } = bounds;
+    return rows.filter(r => {
+      const la = parseFloat(r[latCol]), lo = parseFloat(r[lonCol]);
+      return la >= latMin && la <= latMax && lo >= lonMin && lo <= lonMax;
+    });
+  },
+  // MAN: point-in-polygon exclusion; `inPolygonFn(lat,lon)` supplied by caller (Turf-backed)
+  MAN(rows, latCol, lonCol, inPolygonFn){
+    if (!inPolygonFn) return rows;
+    return rows.filter(r => {
+      const la = parseFloat(r[latCol]), lo = parseFloat(r[lonCol]);
+      if (!isFinite(la) || !isFinite(lo)) return true;
+      return !inPolygonFn(la, lo); // exclude points inside the drawn polygon
+    });
+  },
+};
+
+/* ---------------------------------------------------------------
+   Balancing — mean-ratio scaling anchored to a base group
+   --------------------------------------------------------------- */
+// Computes, for each group, the factor that scales that group's mean of
+// `valueCol` up/down to match the base group's mean. Shared by yield-based
+// balancing (date/machine) and moisture-based balancing below — the only
+// difference between them is which column the ratio is computed from.
+function computeGroupFactors(rows, valueCol, groupKeyFn, baseValue){
+  const groups = new Map();
+  for (const r of rows){
+    const g = groupKeyFn(r);
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(r);
+  }
+  const baseRows = groups.get(String(baseValue)) || [];
+  const baseVals = baseRows.map(r => parseFloat(r[valueCol])).filter(isFinite);
+  if (!baseVals.length) return { factors: {}, error: `Base group "${baseValue}" has no valid data in "${valueCol}".` };
+  const baseMean = baseVals.reduce((a,b)=>a+b,0) / baseVals.length;
+
+  const factors = {};
+  for (const [g, grows] of groups.entries()){
+    const vals = grows.map(r => parseFloat(r[valueCol])).filter(isFinite);
+    const gMean = vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : 0;
+    factors[g] = gMean > 0 ? baseMean / gMean : 1.0;
+  }
+  return { factors };
+}
+// Writes group-scaled values from `sourceCol` into a new `sourceCol+suffix`
+// column, plus a matching `*_factor` column recording the factor used.
+function applyGroupFactors(rows, sourceCol, suffix, groupKeyFn, factors){
+  const balancedCol = sourceCol + suffix;
+  const factorCol = suffix === "_balanced" ? "balance_factor" : suffix.replace(/^_/, "") + "_factor";
+  for (const r of rows){
+    const g = groupKeyFn(r);
+    const f = factors[g] !== undefined ? factors[g] : 1.0;
+    const v = parseFloat(r[sourceCol]);
+    r[balancedCol] = isFinite(v) ? v * f : NaN;
+    r[factorCol] = f;
+  }
+  return balancedCol;
+}
+function balanceByGroup(rows, yieldCol, groupKeyFn, baseValue){
+  const { factors, error } = computeGroupFactors(rows, yieldCol, groupKeyFn, baseValue);
+  if (error) return { rows, factors: {}, error };
+  const balancedCol = applyGroupFactors(rows, yieldCol, "_balanced", groupKeyFn, factors);
+  return { rows, factors, balancedCol };
+}
+// Moisture balancing: the *ratio* is computed from each group's mean
+// moisture reading (not yield), but the resulting factor is applied to
+// yield. Useful when two combines' yield means genuinely differ (real
+// agronomy) but one machine's moisture meter is out of calibration —
+// scaling by yield directly would paper over real differences, while
+// scaling by the moisture ratio targets the sensor issue specifically.
+function balanceByMoisture(rows, yieldCol, moistureCol, groupKeyFn, baseValue){
+  const { factors, error } = computeGroupFactors(rows, moistureCol, groupKeyFn, baseValue);
+  if (error) return { rows, factors: {}, error };
+  const balancedCol = applyGroupFactors(rows, yieldCol, "_moisturebal", groupKeyFn, factors);
+  return { rows, factors, balancedCol };
+}
+
+/* ---------------------------------------------------------------
+   Post-harvest calibration — final single-factor scale of the whole
+   dataset to match a known scale-ticket / weigh-wagon total or average.
+   The user supplies any one (or more) of four target values; whichever
+   are filled in are each compared against the tool's current estimate
+   and the resulting factor(s) averaged together.
+   --------------------------------------------------------------- */
+// Total harvested acres for the current rows: prefer an imported
+// boundary's area (most accurate, user-supplied); otherwise estimate from
+// swath width x ground speed assuming ~1 Hz logging (the same assumption
+// the AgLeader Text export uses when it reconstructs distance-per-tick).
+function estimateTotalAcres(rows, boundary, swathCol, swathUnit, velCol){
+  if (boundary){
+    let areaAc = 0;
+    try{ for (const feat of boundary.features) areaAc += featureAreaM2(feat) / 4046.8564224; } catch(e){}
+    if (areaAc > 0) return { acres: areaAc, source: "boundary" };
+  }
+  if (!swathCol || !velCol) return { acres: null, source: null };
+  let acres = 0;
+  for (const r of rows){
+    const swathFt = unitToFeet(parseFloat(r[swathCol]), swathUnit);
+    const spdMph = parseFloat(r[velCol]);
+    if (!isFinite(swathFt) || !isFinite(spdMph)) continue;
+    acres += (swathFt * (spdMph * 1.46667) * 1) / 43560; // 1 assumed second per point
+  }
+  return { acres: acres > 0 ? acres : null, source: "swath_speed" };
+}
+function applyPostCalibration(rows, cfg, ctx){
+  const meanOf = (col) => {
+    if (!col) return null;
+    const vals = rows.map(r => parseFloat(r[col])).filter(isFinite);
+    return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
+  };
+  const currentMeanWetDirect = meanOf(ctx.wetCol);
+  const currentMeanDryDirect = meanOf(ctx.dryCol);
+
+  let avgMoisture = meanOf(ctx.moistureCol);
+  const { acres, source: acresSource } = estimateTotalAcres(rows, ctx.boundary, ctx.swathCol, ctx.swathUnit, ctx.velCol);
+  const dryFrac = (avgMoisture !== null) ? (100 - avgMoisture) / 100 : null; // dry-matter fraction
+
+  // Prefer a directly-mapped column over deriving one basis from the
+  // other via the moisture % — a real measured value beats an assumption.
+  const currentMeanWet = currentMeanWetDirect;
+  const currentTotalWet = (currentMeanWet !== null && acres) ? currentMeanWet * acres : null;
+  let currentMeanDry = currentMeanDryDirect;
+  if (currentMeanDry === null && currentMeanWet !== null && dryFrac !== null) currentMeanDry = currentMeanWet * dryFrac;
+  let currentTotalDry = null;
+  if (currentMeanDryDirect !== null && acres) currentTotalDry = currentMeanDryDirect * acres;
+  else if (currentTotalWet !== null && dryFrac !== null) currentTotalDry = currentTotalWet * dryFrac;
+
+  const has = v => v !== null && v !== undefined && v !== "";
+  const factors = [];
+  if (has(cfg.totalWet)){
+    if (!ctx.wetCol) return { factor:null, error:"Total Wet needs a Wet/Unprocessed Yield column mapped." };
+    if (!currentTotalWet) return { factor:null, error:"Total Wet needs a field boundary, or Swath width + Velocity mapped, to estimate acres." };
+    factors.push(parseFloat(cfg.totalWet) / currentTotalWet);
+  }
+  if (has(cfg.wetAvg)){
+    if (!ctx.wetCol || currentMeanWet === null) return { factor:null, error:"Wet Yield Avg/ac needs a Wet/Unprocessed Yield column mapped." };
+    factors.push(parseFloat(cfg.wetAvg) / currentMeanWet);
+  }
+  if (has(cfg.totalDry)){
+    if (currentTotalDry === null) return { factor:null, error:"Total Dry needs either a mapped Dry/Processed Yield column, or a mapped Wet/Unprocessed Yield + Moisture, plus a boundary or Swath width + Velocity to estimate acres." };
+    factors.push(parseFloat(cfg.totalDry) / currentTotalDry);
+  }
+  if (has(cfg.dryAvg)){
+    if (currentMeanDry === null) return { factor:null, error:"Dry Yield Avg/ac needs either a mapped Dry/Processed Yield column, or a mapped Wet/Unprocessed Yield + Moisture column." };
+    factors.push(parseFloat(cfg.dryAvg) / currentMeanDry);
+  }
+  if (!factors.length) return { factor:null, error:null };
+  const factor = factors.reduce((a,b)=>a+b,0) / factors.length;
+  return { factor, currentMeanWet, currentTotalWet, currentMeanDry, currentTotalDry, acres, acresSource, avgMoisture, dryIsDirect: currentMeanDryDirect !== null };
+}
+
+/* ---------------------------------------------------------------
+   Basic stats helper for the session-summary export
+   --------------------------------------------------------------- */
+function basicStats(rows, col){
+  const vals = rows.map(r => parseFloat(r[col])).filter(isFinite);
+  if (!vals.length) return null;
+  const n = vals.length;
+  const mean = vals.reduce((a,b)=>a+b,0) / n;
+  const variance = vals.reduce((a,b)=>a+(b-mean)**2,0) / n;
+  return {
+    n, mean,
+    std: Math.sqrt(variance),
+    min: Math.min(...vals),
+    max: Math.max(...vals),
+  };
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    COLUMN_ALIASES, detectColumn, normColName,
+    AGL_COLS, GPS_EPOCH_OFFSET, parseAgLeaderText,
+    coerceNumeric, haversineFt, parseTimestampToUnix, computeTransects,
+    Filters, balanceByGroup, balanceByMoisture, computeGroupFactors, applyGroupFactors,
+    estimateTotalAcres, applyPostCalibration, basicStats,
+  };
+}
+
+</script>
+
+<script>
+/* ===== geometry.js ===== */
+/* ============================================================
+   Minimal geometry helpers — replaces the turf.js CDN dependency
+   (cdnjs only mirrors a dead pre-1.0 Turf.js build that's not
+   API-compatible with modern turf, so we implement the handful
+   of operations we actually need ourselves).
+   Everything here works on plain GeoJSON [lon,lat] coordinates.
+   ============================================================ */
+
+function pointInRing(x, y, ring){
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++){
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInPolygonRings(x, y, rings){
+  if (!rings || !rings.length) return false;
+  if (!pointInRing(x, y, rings[0])) return false; // outside outer ring
+  for (let i = 1; i < rings.length; i++){
+    if (pointInRing(x, y, rings[i])) return false; // inside a hole
+  }
+  return true;
+}
+
+/** @param feature a GeoJSON Feature (or bare geometry) — Polygon or MultiPolygon */
+function pointInPolygonFeature(x, y, feature){
+  const geom = feature.geometry || feature;
+  if (!geom) return false;
+  if (geom.type === "Polygon") return pointInPolygonRings(x, y, geom.coordinates);
+  if (geom.type === "MultiPolygon") return geom.coordinates.some(poly => pointInPolygonRings(x, y, poly));
+  return false;
+}
+
+function scanCoordsForBbox(coords, depth, box){
+  if (depth === 0){
+    const [x, y] = coords;
+    if (x < box.minX) box.minX = x; if (x > box.maxX) box.maxX = x;
+    if (y < box.minY) box.minY = y; if (y > box.maxY) box.maxY = y;
+  } else {
+    for (const c of coords) scanCoordsForBbox(c, depth - 1, box);
+  }
+}
+const GEOM_DEPTH = { Point:0, MultiPoint:1, LineString:1, MultiLineString:2, Polygon:2, MultiPolygon:3 };
+
+/** @param fc GeoJSON FeatureCollection -> [minX,minY,maxX,maxY] */
+function bboxOfFeatureCollection(fc){
+  const box = { minX:Infinity, minY:Infinity, maxX:-Infinity, maxY:-Infinity };
+  const feats = fc.type === "FeatureCollection" ? fc.features : [fc];
+  for (const f of feats){
+    const g = f.geometry || f;
+    if (!g || !g.coordinates) continue;
+    scanCoordsForBbox(g.coordinates, GEOM_DEPTH[g.type] ?? 2, box);
+  }
+  return [box.minX, box.minY, box.maxX, box.maxY];
+}
+
+function ringSignedArea(ring){
+  // shoelace formula, in squared-degrees (planar approximation)
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++){
+    a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  }
+  return a / 2;
+}
+
+function polygonAreaDeg2(rings){
+  let a = Math.abs(ringSignedArea(rings[0]));
+  for (let i = 1; i < rings.length; i++) a -= Math.abs(ringSignedArea(rings[i]));
+  return Math.max(a, 0);
+}
+
+/** Planar-approximation area in square metres — fine at field scale (a handful of km across). */
+function featureAreaM2(feature){
+  const g = feature.geometry || feature;
+  if (!g) return 0;
+  const [minX, minY, maxX, maxY] = bboxOfFeatureCollection({ type:"FeatureCollection", features:[feature] });
+  const midLat = (minY + maxY) / 2;
+  const mPerDegLat = 111320;
+  const mPerDegLon = 111320 * Math.cos(midLat * Math.PI / 180);
+  let areaDeg2 = 0;
+  if (g.type === "Polygon") areaDeg2 = polygonAreaDeg2(g.coordinates);
+  else if (g.type === "MultiPolygon") areaDeg2 = g.coordinates.reduce((s, p) => s + polygonAreaDeg2(p), 0);
+  return areaDeg2 * mPerDegLat * mPerDegLon;
+}
+
+/** Area-weighted centroid of a single ring (standard polygon-centroid formula). */
+function centroidOfRing(ring){
+  let cx = 0, cy = 0, a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++){
+    const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    a += cross;
+    cx += (ring[j][0] + ring[i][0]) * cross;
+    cy += (ring[j][1] + ring[i][1]) * cross;
+  }
+  a *= 0.5;
+  if (Math.abs(a) < 1e-14){
+    let sx = 0, sy = 0;
+    for (const [x, y] of ring){ sx += x; sy += y; }
+    return [sx / ring.length, sy / ring.length];
+  }
+  return [cx / (6 * a), cy / (6 * a)];
+}
+
+/** Rings (array of rings; ring[0]=outer) for a Polygon feature, or the largest
+ *  sub-polygon's rings for a MultiPolygon. Returns null for non-polygon geometry. */
+function mainPolygonRings(feature){
+  const g = feature.geometry || feature;
+  if (!g) return null;
+  if (g.type === "Polygon") return g.coordinates;
+  if (g.type === "MultiPolygon"){
+    let best = null, bestArea = -1;
+    for (const poly of g.coordinates){
+      const a = Math.abs(ringSignedArea(poly[0]));
+      if (a > bestArea){ bestArea = a; best = poly; }
+    }
+    return best;
+  }
+  return null;
+}
+
+/** @param feature GeoJSON Feature/geometry (Polygon or MultiPolygon) -> [lon,lat] or null */
+function centroidOfFeature(feature){
+  const rings = mainPolygonRings(feature);
+  if (rings) return centroidOfRing(rings[0]);
+  const g = feature.geometry || feature;
+  if (g && g.type === "Point") return g.coordinates;
+  return null;
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    pointInRing, pointInPolygonRings, pointInPolygonFeature,
+    bboxOfFeatureCollection, ringSignedArea, polygonAreaDeg2,
+    featureAreaM2, centroidOfRing, centroidOfFeature, mainPolygonRings,
+  };
+}
+
+</script>
+
+<script>
+/* ===== geotiff-writer.js ===== */
+/* ============================================================
+   Minimal GeoTIFF writer — uncompressed, Float32, N bands,
+   geographic (EPSG:4326) georeferencing. No external deps.
+   Good enough for QGIS / ArcGIS / gdalinfo to read correctly.
+   ============================================================ */
+
+function writeGeoTIFF({ width, height, bands, originLon, originLat, pixelW, pixelH, nodata }){
+  // bands: array of Float32Array, length = width*height, row-major, top-left origin
+  const nBands = bands.length;
+  const bytesPerSample = 4; // float32
+  const pixelBytes = nBands * bytesPerSample;
+  const stripByteCount = width * height * pixelBytes;
+
+  // ---- Build tag list -----------------------------------------------------
+  // We'll lay the file out as: [8-byte header][IFD][tag overflow data][pixel data]
+  // Tags requiring >4 bytes of value data (BitsPerSample, SampleFormat,
+  // ModelPixelScale, ModelTiepoint, GeoKeyDirectory, ImageDescription, strip
+  // offsets/counts when >1 value) are written after the IFD.
+
+  const TYPE = { BYTE:1, ASCII:2, SHORT:3, LONG:4, RATIONAL:5, DOUBLE:12 };
+
+  const geoKeys = [
+    // KeyDirectoryVersion, KeyRevision, MinorRevision, NumberOfKeys(set below)
+    1, 1, 0, 3,
+    1024, 0, 1, 2,     // GTModelTypeGeoKey = 2 (Geographic)
+    1025, 0, 1, 1,     // GTRasterTypeGeoKey = 1 (PixelIsArea)
+    2048, 0, 1, 4326,  // GeographicTypeGeoKey = 4326 (WGS84)
+  ];
+
+  const desc = "Yield Editor Pro Web export | bands: " + bands.map((b,i)=>"band"+(i+1)).join(",") + "\0";
+  const descBytes = strToBytes(desc);
+
+  // per-band SampleFormat=3 (IEEE float), BitsPerSample=32
+  const bitsPerSampleArr = new Array(nBands).fill(32);
+  const sampleFormatArr = new Array(nBands).fill(3);
+
+  // Tags (numeric tag id -> {type, count, value or array})
+  const tags = [];
+  tags.push([256, TYPE.LONG, 1, width]);                       // ImageWidth
+  tags.push([257, TYPE.LONG, 1, height]);                      // ImageLength
+  tags.push([258, TYPE.SHORT, nBands, bitsPerSampleArr]);       // BitsPerSample
+  tags.push([259, TYPE.SHORT, 1, 1]);                           // Compression = none
+  tags.push([262, TYPE.SHORT, 1, nBands === 1 ? 1 : 1]);        // PhotometricInterpretation = BlackIsZero
+  tags.push([270, TYPE.ASCII, descBytes.length, descBytes]);    // ImageDescription
+  tags.push([273, TYPE.LONG, 1, "__STRIP_OFFSET__"]);           // StripOffsets (patched later)
+  tags.push([277, TYPE.SHORT, 1, nBands]);                      // SamplesPerPixel
+  tags.push([278, TYPE.LONG, 1, height]);                       // RowsPerStrip (single strip)
+  tags.push([279, TYPE.LONG, 1, stripByteCount]);               // StripByteCounts
+  tags.push([284, TYPE.SHORT, 1, 1]);                           // PlanarConfiguration = chunky
+  tags.push([339, TYPE.SHORT, nBands, sampleFormatArr]);        // SampleFormat
+  tags.push([33550, TYPE.DOUBLE, 3, [pixelW, pixelH, 0]]);      // ModelPixelScaleTag
+  tags.push([33922, TYPE.DOUBLE, 6, [0,0,0, originLon, originLat, 0]]); // ModelTiepointTag
+  tags.push([34735, TYPE.SHORT, geoKeys.length, geoKeys]);      // GeoKeyDirectoryTag
+  if (nodata !== undefined && nodata !== null){
+    const ndStr = strToBytes(String(nodata) + "\0");
+    tags.push([42113, TYPE.ASCII, ndStr.length, ndStr]);        // GDAL_NODATA
+  }
+  tags.sort((a,b) => a[0] - b[0]);
+
+  // ---- Compute offsets -------------------------------------------------
+  const HEADER_SIZE = 8;
+  const IFD_ENTRY_SIZE = 12;
+  const ifdCount = tags.length;
+  const ifdSize = 2 + ifdCount * IFD_ENTRY_SIZE + 4; // count + entries + nextIFDOffset
+
+  let cursor = HEADER_SIZE + ifdSize;
+  const overflowChunks = []; // {offset, bytes}
+  const typeSize = { 1:1, 2:1, 3:2, 4:4, 5:8, 12:8 };
+
+  function encodeValueBytes(type, count, value){
+    const sz = typeSize[type];
+    const buf = new ArrayBuffer(Math.max(sz*count, 4));
+    const dv = new DataView(buf);
+    if (type === TYPE.ASCII){
+      const bytes = value; // already a Uint8Array
+      for (let i=0;i<bytes.length;i++) dv.setUint8(i, bytes[i]);
+    } else if (type === TYPE.SHORT){
+      const arr = Array.isArray(value) ? value : [value];
+      for (let i=0;i<arr.length;i++) dv.setUint16(i*2, arr[i], true);
+    } else if (type === TYPE.LONG){
+      const arr = Array.isArray(value) ? value : [value];
+      for (let i=0;i<arr.length;i++) dv.setUint32(i*4, arr[i], true);
+    } else if (type === TYPE.DOUBLE){
+      const arr = Array.isArray(value) ? value : [value];
+      for (let i=0;i<arr.length;i++) dv.setFloat64(i*8, arr[i], true);
+    }
+    return new Uint8Array(buf, 0, sz*count);
+  }
+
+  const resolved = tags.map(([tag, type, count, value]) => {
+    if (value === "__STRIP_OFFSET__") return { tag, type, count, inline: null, stripPlaceholder: true };
+    const sz = typeSize[type] * count;
+    if (sz <= 4 && !(Array.isArray(value) && type !== TYPE.ASCII && count > 1 && typeSize[type]*count > 4)){
+      if (sz <= 4){
+        return { tag, type, count, inline: encodeValueBytes(type, count, value) };
+      }
+    }
+    const bytes = encodeValueBytes(type, count, value);
+    const entry = { tag, type, count, offset: cursor, bytes };
+    overflowChunks.push(entry);
+    cursor += bytes.length + (bytes.length % 2); // word-align
+    return entry;
+  });
+
+  const pixelDataOffset = cursor;
+
+  // ---- Allocate final buffer ---------------------------------------------
+  const totalSize = pixelDataOffset + stripByteCount;
+  const out = new ArrayBuffer(totalSize);
+  const dv = new DataView(out);
+  let littleEndian = true;
+
+  // Header
+  dv.setUint8(0, 0x49); dv.setUint8(1, 0x49); // "II"
+  dv.setUint16(2, 42, true);
+  dv.setUint32(4, 8, true); // IFD offset
+
+  // IFD
+  let p = 8;
+  dv.setUint16(p, ifdCount, true); p += 2;
+  for (const entry of resolved){
+    dv.setUint16(p, entry.tag, true);
+    dv.setUint16(p+2, entry.type, true);
+    dv.setUint32(p+4, entry.count, true);
+    if (entry.stripPlaceholder){
+      dv.setUint32(p+8, pixelDataOffset, true);
+    } else if (entry.inline){
+      const b = entry.inline;
+      for (let i=0;i<4;i++) dv.setUint8(p+8+i, i < b.length ? b[i] : 0);
+    } else {
+      dv.setUint32(p+8, entry.offset, true);
+    }
+    p += 12;
+  }
+  dv.setUint32(p, 0, true); // next IFD offset = 0 (single image)
+
+  // Overflow value data
+  for (const entry of overflowChunks){
+    for (let i=0;i<entry.bytes.length;i++) dv.setUint8(entry.offset+i, entry.bytes[i]);
+  }
+
+  // Pixel data, interleaved by band (chunky)
+  let po = pixelDataOffset;
+  for (let i = 0; i < width*height; i++){
+    for (let b = 0; b < nBands; b++){
+      dv.setFloat32(po, bands[b][i], true);
+      po += 4;
+    }
+  }
+
+  return new Uint8Array(out);
+}
+
+function strToBytes(s){
+  const arr = new Uint8Array(s.length);
+  for (let i=0;i<s.length;i++) arr[i] = s.charCodeAt(i) & 0xFF;
+  return arr;
+}
+
+if (typeof module !== "undefined") module.exports = { writeGeoTIFF };
+
+</script>
+
+<script>
+/* ===== shapefile-writer.js ===== */
+/* ============================================================
+   Minimal ESRI Shapefile writer (Point shapefiles only) —
+   ported from the desktop tool's _pack_dbf / _pack_shp_shx.
+   Produces .shp, .shx, .dbf, .prj byte arrays + a name_map for
+   any DBF field names that were truncated/renamed.
+   ============================================================ */
+
+function detectFieldType(rows, col){
+  let hasVal = false, allInt = true, allNum = true;
+  let maxStrLen = 1;
+  for (const r of rows){
+    const v = r[col];
+    if (v === undefined || v === null || v === "" || (typeof v === "number" && Number.isNaN(v))) continue;
+    hasVal = true;
+    if (typeof v === "number"){
+      if (!Number.isInteger(v)) allInt = false;
+    } else {
+      const s = String(v);
+      if (s.trim() !== "" && !isNaN(Number(s))) {
+        if (!Number.isInteger(Number(s))) allInt = false;
+      } else {
+        allNum = false;
+      }
+      maxStrLen = Math.max(maxStrLen, s.length);
+    }
+  }
+  if (!hasVal) return { type: "C", len: 20, dec: 0 };
+  if (allNum && allInt) return { type: "N", len: 11, dec: 0 };
+  if (allNum) return { type: "N", len: 18, dec: 6 };
+  return { type: "C", len: Math.min(Math.max(maxStrLen, 1), 254), dec: 0 };
+}
+
+function packDBF(rows, columns){
+  const usedNames = {};
+  const safeCols = []; // [origCol, dbfName]
+  const nameMap = {};
+  for (const col of columns){
+    let base = col.slice(0, 10).toUpperCase().replace(/ /g, "_");
+    let dbfName;
+    if (!(base in usedNames)){
+      usedNames[base] = 1;
+      dbfName = base;
+    } else {
+      usedNames[base] += 1;
+      const suffix = "_" + usedNames[base];
+      dbfName = base.slice(0, 10 - suffix.length) + suffix;
+    }
+    safeCols.push([col, dbfName]);
+    const normalised = col.slice(0, 10).toUpperCase().replace(/ /g, "_");
+    if (col.length > 10 || dbfName !== normalised) nameMap[dbfName] = col;
+  }
+
+  const fieldInfo = safeCols.map(([orig]) => ({ orig, ...detectFieldType(rows, orig) }));
+  let recSize = 1;
+  for (const f of fieldInfo) recSize += f.len;
+
+  const headerSize = 32 + 32 * safeCols.length + 1;
+  const now = new Date();
+
+  const chunks = [];
+  const header = new Uint8Array(32);
+  const hv = new DataView(header.buffer);
+  hv.setUint8(0, 3);
+  hv.setUint8(1, now.getFullYear() - 1900);
+  hv.setUint8(2, now.getMonth() + 1);
+  hv.setUint8(3, now.getDate());
+  hv.setUint32(4, rows.length, true);
+  hv.setUint16(8, headerSize, true);
+  hv.setUint16(10, recSize, true);
+  chunks.push(header);
+
+  for (let i = 0; i < safeCols.length; i++){
+    const [, dbfName] = safeCols[i];
+    const f = fieldInfo[i];
+    const desc = new Uint8Array(32);
+    const nameBytes = strToBytes(dbfName.padEnd(11, "\0").slice(0, 11));
+    desc.set(nameBytes, 0);
+    desc[11] = f.type.charCodeAt(0);
+    desc[16] = f.len;
+    desc[17] = f.dec;
+    chunks.push(desc);
+  }
+  chunks.push(new Uint8Array([0x0d])); // header terminator
+
+  for (const row of rows){
+    const recChunks = [new Uint8Array([0x20])]; // not-deleted flag (space)
+    for (const f of fieldInfo){
+      let val = row[f.orig];
+      const isNa = val === undefined || val === null || val === "" ||
+                   (typeof val === "number" && Number.isNaN(val));
+      let s;
+      if (f.type === "N"){
+        if (isNa) s = "";
+        else if (f.dec) s = Number(val).toFixed(f.dec);
+        else s = String(Math.trunc(Number(val)));
+      } else {
+        s = isNa ? "" : String(val);
+      }
+      let bytes = strToBytes(s).slice(0, f.len);
+      const padded = new Uint8Array(f.len).fill(0x20);
+      padded.set(bytes, f.type === "N" ? f.len - bytes.length : 0); // right-align numbers like DBF convention
+      recChunks.push(padded);
+    }
+    chunks.push(...recChunks);
+  }
+  chunks.push(new Uint8Array([0x1a])); // EOF
+
+  return { bytes: concatBytes(chunks), nameMap };
+}
+
+function packShpShx(rows, lonCol, latCol){
+  const n = rows.length;
+  const shpRecs = [];
+  const shxRecs = [];
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let shpOffsetWords = 50; // header = 100 bytes = 50 words
+
+  for (let i = 0; i < n; i++){
+    const x = parseFloat(rows[i][lonCol]);
+    const y = parseFloat(rows[i][latCol]);
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+
+    const rec = new ArrayBuffer(8 + 20); // rec header (8 bytes) + content (20 bytes: type4 + x8 + y8)
+    const dv = new DataView(rec);
+    dv.setUint32(0, i + 1, false);   // record number (big-endian)
+    dv.setUint32(4, 10, false);      // content length in 16-bit words (big-endian)
+    dv.setUint32(8, 1, true);        // shape type = 1 (Point), little-endian
+    dv.setFloat64(12, x, true);
+    dv.setFloat64(20, y, true);
+    shpRecs.push(new Uint8Array(rec));
+
+    const shx = new ArrayBuffer(8);
+    const sv = new DataView(shx);
+    sv.setUint32(0, shpOffsetWords, false);
+    sv.setUint32(4, 10, false);
+    shxRecs.push(new Uint8Array(shx));
+    shpOffsetWords += 4 + 10;
+  }
+
+  const shpBody = concatBytes(shpRecs);
+  const shxBody = concatBytes(shxRecs);
+  const shpFileLenWords = (100 + shpBody.length) / 2;
+  const shxFileLenWords = (100 + shxBody.length) / 2;
+
+  function makeHeader(fileLenWords){
+    const h = new Uint8Array(100);
+    const dv = new DataView(h.buffer);
+    dv.setUint32(0, 9994, false);       // file code
+    dv.setUint32(24, fileLenWords, false);
+    dv.setUint32(28, 1000, true);       // version
+    dv.setUint32(32, 1, true);          // shape type: Point
+    dv.setFloat64(36, isFinite(minX) ? minX : 0, true);
+    dv.setFloat64(44, isFinite(minY) ? minY : 0, true);
+    dv.setFloat64(52, isFinite(maxX) ? maxX : 0, true);
+    dv.setFloat64(60, isFinite(maxY) ? maxY : 0, true);
+    return h;
+  }
+
+  const shpBytes = concatBytes([makeHeader(shpFileLenWords), shpBody]);
+  const shxBytes = concatBytes([makeHeader(shxFileLenWords), shxBody]);
+  return { shpBytes, shxBytes };
+}
+
+/** Writes a Polygon shapefile. `polyField(row)` must return an array of rings
+ *  (ring[0] = outer boundary, ring[1..] = holes), each ring an array of [x,y]
+ *  pairs, closed (first === last), in GeoJSON (lon,lat) order. Ring winding
+ *  is auto-corrected to the shapefile convention (outer=CW, holes=CCW) using
+ *  ringSignedArea from geometry.js. */
+function packShpShxPolygon(rows, polyField){
+  const n = rows.length;
+  const shpRecs = [];
+  const shxRecs = [];
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let shpOffsetWords = 50; // header = 100 bytes = 50 words
+
+  for (let i = 0; i < n; i++){
+    let rings = polyField(rows[i]) || [];
+    rings = rings.map((ring, idx) => {
+      const area = ringSignedArea(ring); // >0 = CCW (GeoJSON exterior convention)
+      const wantCW = idx === 0;          // shapefile wants outer=CW, holes=CCW
+      const isCW = area < 0;
+      return (wantCW !== isCW) ? ring.slice().reverse() : ring;
+    });
+
+    const parts = [];
+    const pts = [];
+    let numPoints = 0;
+    let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+    for (const ring of rings){
+      parts.push(numPoints);
+      for (const [x, y] of ring){
+        pts.push(x, y);
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y; if (y > by1) by1 = y;
+        numPoints++;
+      }
+    }
+    const numParts = rings.length;
+    const contentBytes = 4 + 32 + 4 + 4 + numParts*4 + numPoints*16;
+    const contentWords = contentBytes / 2;
+    const rec = new ArrayBuffer(8 + contentBytes);
+    const dv = new DataView(rec);
+    dv.setUint32(0, i + 1, false);
+    dv.setUint32(4, contentWords, false);
+    let p = 8;
+    dv.setUint32(p, 5, true); p += 4; // shape type = Polygon
+    dv.setFloat64(p, isFinite(bx0)?bx0:0, true); p += 8;
+    dv.setFloat64(p, isFinite(by0)?by0:0, true); p += 8;
+    dv.setFloat64(p, isFinite(bx1)?bx1:0, true); p += 8;
+    dv.setFloat64(p, isFinite(by1)?by1:0, true); p += 8;
+    dv.setUint32(p, numParts, true); p += 4;
+    dv.setUint32(p, numPoints, true); p += 4;
+    for (const partStart of parts){ dv.setUint32(p, partStart, true); p += 4; }
+    for (let k = 0; k < pts.length; k += 2){
+      dv.setFloat64(p, pts[k], true); p += 8;
+      dv.setFloat64(p, pts[k+1], true); p += 8;
+    }
+    shpRecs.push(new Uint8Array(rec));
+
+    const shx = new ArrayBuffer(8);
+    const sv = new DataView(shx);
+    sv.setUint32(0, shpOffsetWords, false);
+    sv.setUint32(4, contentWords, false);
+    shxRecs.push(new Uint8Array(shx));
+    shpOffsetWords += 4 + contentWords;
+  }
+
+  const shpBody = concatBytes(shpRecs);
+  const shxBody = concatBytes(shxRecs);
+  const shpFileLenWords = (100 + shpBody.length) / 2;
+  const shxFileLenWords = (100 + shxBody.length) / 2;
+
+  function makeHeader(fileLenWords){
+    const h = new Uint8Array(100);
+    const dv = new DataView(h.buffer);
+    dv.setUint32(0, 9994, false);
+    dv.setUint32(24, fileLenWords, false);
+    dv.setUint32(28, 1000, true);
+    dv.setUint32(32, 5, true); // shape type: Polygon
+    dv.setFloat64(36, isFinite(minX) ? minX : 0, true);
+    dv.setFloat64(44, isFinite(minY) ? minY : 0, true);
+    dv.setFloat64(52, isFinite(maxX) ? maxX : 0, true);
+    dv.setFloat64(60, isFinite(maxY) ? maxY : 0, true);
+    return h;
+  }
+
+  const shpBytes = concatBytes([makeHeader(shpFileLenWords), shpBody]);
+  const shxBytes = concatBytes([makeHeader(shxFileLenWords), shxBody]);
+  return { shpBytes, shxBytes };
+}
+
+const PRJ_WGS84 =
+  'GEOGCS["GCS_WGS_1984",' +
+  'DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],' +
+  'PRIMEM["Greenwich",0.0],' +
+  'UNIT["Degree",0.0174532925199433]]';
+
+function concatBytes(arrs){
+  let len = 0; for (const a of arrs) len += a.length;
+  const out = new Uint8Array(len);
+  let o = 0; for (const a of arrs){ out.set(a, o); o += a.length; }
+  return out;
+}
+
+if (typeof module !== "undefined") {
+  module.exports = { packDBF, packShpShx, packShpShxPolygon, PRJ_WGS84, detectFieldType };
+}
+
+</script>
+
+<script>
+/* ===== interpolate.js ===== */
+/* ============================================================
+   Inverse-Distance-Weighted interpolation onto a regular grid.
+   Pure function: points -> Float32Array grid. Boundary clipping
+   (point-in-polygon) is applied by the caller via a mask fn,
+   kept separate so this file has no Turf/Leaflet dependency.
+   ============================================================ */
+
+/**
+ * @param points   [{x,y,v}] in decimal degrees + attribute value
+ * @param grid     {minX,minY,maxX,maxY,cols,rows}
+ * @param opts     {power=2, k=12, maxRadiusDeg=null}
+ * @returns Float32Array length cols*rows, row-major, top-left origin (row 0 = maxY)
+ */
+function idwGrid(points, grid, opts = {}){
+  const power = opts.power ?? 2;
+  const k = opts.k ?? 12;
+  const maxRadiusDeg = opts.maxRadiusDeg ?? null;
+  const { minX, minY, maxX, maxY, cols, rows } = grid;
+  const cellW = (maxX - minX) / cols;
+  const cellH = (maxY - minY) / rows;
+  const out = new Float32Array(cols * rows);
+
+  // simple spatial bucket index for nearest-neighbour speed on large point sets
+  const bucketSize = Math.max(cellW, cellH) * 8 || 0.001;
+  const buckets = new Map();
+  const bkey = (bx,by) => bx + "_" + by;
+  for (const p of points){
+    const bx = Math.floor(p.x / bucketSize), by = Math.floor(p.y / bucketSize);
+    const key = bkey(bx,by);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(p);
+  }
+
+  function nearestPoints(px, py, kNeeded){
+    let radius = 1;
+    let found = [];
+    const bx0 = Math.floor(px / bucketSize), by0 = Math.floor(py / bucketSize);
+    while (found.length < kNeeded && radius < 64){
+      found = [];
+      for (let dx = -radius; dx <= radius; dx++){
+        for (let dy = -radius; dy <= radius; dy++){
+          const arr = buckets.get(bkey(bx0+dx, by0+dy));
+          if (arr) found.push(...arr);
+        }
+      }
+      if (found.length >= kNeeded || radius >= 63) break;
+      radius *= 2;
+    }
+    return found;
+  }
+
+  for (let r = 0; r < rows; r++){
+    const py = maxY - (r + 0.5) * cellH;
+    for (let c = 0; c < cols; c++){
+      const px = minX + (c + 0.5) * cellW;
+      const candidates = nearestPoints(px, py, k);
+      let wsum = 0, vsum = 0, exact = null;
+      for (const p of candidates){
+        const dx = p.x - px, dy = p.y - py;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < 1e-16){ exact = p.v; break; }
+        if (maxRadiusDeg && d2 > maxRadiusDeg*maxRadiusDeg) continue;
+        const w = 1 / Math.pow(d2, power/2);
+        wsum += w;
+        vsum += w * p.v;
+      }
+      out[r*cols + c] = exact !== null ? exact : (wsum > 0 ? vsum / wsum : NaN);
+    }
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------
+   Ordinary Kriging — spherical variogram, auto-fit parameters.
+   Sill/nugget come from the sample variance of the input points;
+   range defaults to 30% of the point cloud's bounding diagonal
+   (or a caller-supplied override, e.g. a user-entered distance).
+   This is a lighter-weight fit than a full experimental-variogram
+   workflow, but gives a legitimate spatial-covariance-weighted
+   interpolation rather than IDW's purely distance-based weights.
+   --------------------------------------------------------------- */
+function sphericalVariogram(h, nugget, sill, range){
+  if (h <= 0) return 0;
+  if (h >= range) return sill;
+  const hr = h / range;
+  return nugget + (sill - nugget) * (1.5*hr - 0.5*hr*hr*hr);
+}
+function estimateVariogramParams(points, rangeOverride){
+  const n = points.length;
+  let mean = 0;
+  for (const p of points) mean += p.v;
+  mean /= Math.max(1, n);
+  let variance = 0;
+  for (const p of points) variance += (p.v - mean) * (p.v - mean);
+  variance /= Math.max(1, n - 1);
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+  for (const p of points){
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  const diag = Math.hypot(maxX-minX, maxY-minY) || 1e-9;
+  const sill = variance || 1e-9;
+  return {
+    nugget: sill * 0.05,
+    sill,
+    range: (rangeOverride && rangeOverride > 0) ? rangeOverride : diag * 0.3,
+  };
+}
+// Small dense linear solve via Gaussian elimination with partial
+// pivoting. A and b are mutated in place; returns the solution vector.
+function solveLinearSystem(A, b){
+  const n = b.length;
+  for (let i = 0; i < n; i++){
+    let maxRow = i;
+    for (let k = i+1; k < n; k++) if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) maxRow = k;
+    if (maxRow !== i){ [A[i],A[maxRow]] = [A[maxRow],A[i]]; [b[i],b[maxRow]] = [b[maxRow],b[i]]; }
+    if (Math.abs(A[i][i]) < 1e-12) continue;
+    for (let k = i+1; k < n; k++){
+      const factor = A[k][i] / A[i][i];
+      for (let j = i; j < n; j++) A[k][j] -= factor * A[i][j];
+      b[k] -= factor * b[i];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let i = n-1; i >= 0; i--){
+    let sum = b[i];
+    for (let j = i+1; j < n; j++) sum -= A[i][j] * x[j];
+    x[i] = Math.abs(A[i][i]) < 1e-12 ? 0 : sum / A[i][i];
+  }
+  return x;
+}
+function krigingGrid(points, grid, opts = {}){
+  const k = opts.k ?? 10;
+  const { minX, minY, maxX, maxY, cols, rows } = grid;
+  const cellW = (maxX - minX) / cols, cellH = (maxY - minY) / rows;
+  const out = new Float32Array(cols * rows);
+  const { nugget, sill, range } = estimateVariogramParams(points, opts.range);
+  const gamma = (h) => sphericalVariogram(h, nugget, sill, range);
+
+  // Same spatial-bucket nearest-neighbour index idwGrid uses, so kriging
+  // scales to large point sets instead of scanning every point per cell.
+  const bucketSize = Math.max(cellW, cellH) * 8 || 0.001;
+  const buckets = new Map();
+  const bkey = (bx,by) => bx + "_" + by;
+  for (const p of points){
+    const bx = Math.floor(p.x / bucketSize), by = Math.floor(p.y / bucketSize);
+    const key = bkey(bx,by);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(p);
+  }
+  function nearbyPoints(px, py, kNeeded){
+    let radius = 1, found = [];
+    const bx0 = Math.floor(px / bucketSize), by0 = Math.floor(py / bucketSize);
+    while (found.length < kNeeded && radius < 64){
+      found = [];
+      for (let dx = -radius; dx <= radius; dx++){
+        for (let dy = -radius; dy <= radius; dy++){
+          const arr = buckets.get(bkey(bx0+dx, by0+dy));
+          if (arr) found.push(...arr);
+        }
+      }
+      if (found.length >= kNeeded || radius >= 63) break;
+      radius *= 2;
+    }
+    return found;
+  }
+
+  for (let r = 0; r < rows; r++){
+    const py = maxY - (r + 0.5) * cellH;
+    for (let c = 0; c < cols; c++){
+      const px = minX + (c + 0.5) * cellW;
+      let cand = nearbyPoints(px, py, k);
+      if (!cand.length){ out[r*cols+c] = NaN; continue; }
+      cand = cand
+        .map(p => ({ p, d: Math.hypot(p.x-px, p.y-py) }))
+        .sort((a,b) => a.d - b.d)
+        .slice(0, k);
+      const exact = cand.find(e => e.d < 1e-9);
+      if (exact){ out[r*cols+c] = exact.p.v; continue; }
+
+      // Ordinary kriging system: [Γ 1; 1ᵀ 0] · [w; μ] = [γ0; 1]
+      const n = cand.length;
+      const A = new Array(n+1);
+      for (let i = 0; i < n; i++){
+        const row = new Array(n+1);
+        for (let j = 0; j < n; j++){
+          row[j] = gamma(Math.hypot(cand[i].p.x-cand[j].p.x, cand[i].p.y-cand[j].p.y));
+        }
+        row[n] = 1;
+        A[i] = row;
+      }
+      A[n] = new Array(n+1).fill(1); A[n][n] = 0;
+      const b = cand.map(e => gamma(e.d)); b.push(1);
+      const weights = solveLinearSystem(A, b);
+      let est = 0;
+      for (let i = 0; i < n; i++) est += weights[i] * cand[i].p.v;
+      out[r*cols+c] = est;
+    }
+  }
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid };
+
+</script>
+
+<script>
+/* ===== app.js ===== */
+/* ============================================================
+   Yield Editor Pro — Web  |  app.js
+   UI glue: state, import/export, map rendering, filter/balance
+   pipeline. Depends on core.js, geotiff-writer.js,
+   shapefile-writer.js, interpolate.js, geometry.js (loaded
+   earlier) plus Leaflet, PapaParse, JSZip, shpjs. Box/polygon
+   drawing is hand-rolled (no leaflet-draw) — see initMap().
+   ============================================================ */
+
+const FILTER_DEFS = [
+  ["DELAY","Grain flow delay","Shift yield N observations forward to correct for combine grain-flow lag. Also shifts the non-primary yield column and Moisture (if mapped) by the same N.","obs",0],
+  ["START","Start pass delay","Drop the first N observations of every pass (header lowering).","obs",3],
+  ["END","End pass delay","Drop the last N observations of every pass (header raising).","obs",3],
+  ["STARTSEC","Start pass delay (sec)","Drop points within the first N seconds of every pass (header lowering), timed from the mapped Timestamp column. Independent of the observation-count version above — use whichever matches how you think about lag.","sec",null],
+  ["ENDSEC","End pass delay (sec)","Drop points within the last N seconds of every pass (header raising), timed from the mapped Timestamp column.","sec",null],
+  ["MAXV","Maximum velocity","Remove points collected above this ground speed.","mph",null],
+  ["MINV","Minimum velocity","Remove points collected below this ground speed.","mph",null],
+  ["SMV","Smooth velocity","Remove points where speed changes more than this fraction vs. the previous point.","ratio",0.5],
+  ["MINS","Minimum swath","Remove points where active swath width is below this value.","ft",null],
+  ["MAXY","Maximum yield","Remove points above this yield value.","bu/ac",null],
+  ["MINY","Minimum yield","Remove points below this yield value.","bu/ac",null],
+  ["STDY","Std. deviation of yield","Remove points beyond N standard deviations from the mean yield.","stdev",3],
+  ["POS","Position (bounding box)","Keep only points inside a box you draw on the map.","—",null],
+  ["MAN","Manual selection","Exclude points inside polygon(s) you draw on the map.","—",null],
+];
+
+// The traditional/"bulk" order the USDA Yield Editor applies its filter
+// set in. Used whenever custom ordering is off, and as the starting
+// drag order for the filter list.
+const DEFAULT_FILTER_ORDER = FILTER_DEFS.map(f => f[0]);
+
+const S = {
+  rawRows: [], columns: [], numericCols: [],
+  sourceFormat: null, sourceFilename: "",
+  mapping: { lon:null, lat:null, yieldDry:null, yieldWet:null, primaryYield:"dry",
+             velocity:null, swath:null, moisture:null, timestamp:null, machine:null },
+  units: { yield:"bu/ac", velocity:"mph", swath:"ft", altitude:"ft" },
+  filters: {
+    DELAY:{enabled:false, val:0}, START:{enabled:false, val:3}, END:{enabled:false, val:3},
+    STARTSEC:{enabled:false, val:null}, ENDSEC:{enabled:false, val:null},
+    MAXV:{enabled:false, val:null}, MINV:{enabled:false, val:null}, SMV:{enabled:false, val:0.5},
+    MINS:{enabled:false, val:null}, MAXY:{enabled:false, val:null}, MINY:{enabled:false, val:null},
+    STDY:{enabled:false, val:3}, POS:{enabled:false, bounds:null}, MAN:{enabled:false},
+  },
+  filterOrder: DEFAULT_FILTER_ORDER.slice(), // user-defined drag order, only used when customFilterOrder is true
+  customFilterOrder: false,
+  manPolygons: [], // array of turf polygon features drawn for MAN exclusion
+  balance: {
+    dateEnabled:false, dateBase:null,
+    machineEnabled:false, machineBase:null,
+    moistureEnabled:false, moistureBase:null,
+  },
+  postCal: { enabled:false, totalWet:null, wetAvg:null, totalDry:null, dryAvg:null },
+  postCalResult: null, // {factor, currentMeanWet, currentTotalWet, currentMeanDry, currentTotalDry, acres, acresSource, avgMoisture} from the last run, or null
+  boundary: null, boundaryFilename: "",
+  filteredRows: [], workingYieldCol: null,
+  trace: [], // [{step,label,count}] from the last Apply Filters run
+  balanceFactors: {},
+  geotiffExports: [], // log of {ts,attrs,cellSize,cols,rows}
+  activeAttr: null,
+};
+
+let map, boundaryLayer;
+let pointLayer = null;
+let selectionLayer = null;   // FeatureGroup holding the finished POS box + MAN polygons
+let posBoxLayer = null;      // the single POS rectangle, if any
+
+// custom draw-tool state (vanilla Leaflet — no leaflet-draw dependency)
+let drawMode = null;         // null | 'rect' | 'polygon'
+let rectStart = null;
+let rectPreviewLayer = null;
+let polyVertices = [];
+let polyPreviewLayer = null;
+let polyVertexMarkers = [];
+
+/* ---------------------------------------------------------------
+   Small UI helpers
+   --------------------------------------------------------------- */
+function toast(msg, isErr){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.toggle("err", !!isErr);
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=> el.classList.remove("show"), 3600);
+}
+function setMsg(m){ document.getElementById("sbMsg").textContent = m || ""; }
+function fmtNum(v, d=1){ return (v===null||v===undefined||Number.isNaN(v)) ? "—" : Number(v).toLocaleString(undefined,{maximumFractionDigits:d}); }
+
+document.querySelectorAll(".tabbtn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabbtn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-"+btn.dataset.tab).classList.add("active");
+  });
+});
+
+document.getElementById("themeToggle").addEventListener("click", () => {
+  const body = document.body;
+  const next = body.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  body.setAttribute("data-theme", next);
+  document.getElementById("themeToggle").textContent = next === "dark" ? "◐" : "◑";
+});
+
+/* ---------------------------------------------------------------
+   Basemaps — free, no-API-key tile sources plus an "off" option.
+   Default is Esri World Imagery rather than raw OpenStreetMap
+   tiles: osm.org's volunteer-run servers have a strict usage
+   policy for embedded apps and will block clients that exceed it
+   (see osm.wiki/Blocked). OSM streets is kept as an option for
+   anyone who wants it, but it's no longer the default.
+   CARTO basemaps have been removed — CARTO's basemap tiles now
+   require an account/API key for embedded use, which conflicts
+   with this being a single, keyless offline HTML file. Esri
+   Imagery Hybrid (imagery + a transparent labels/boundaries
+   overlay) and a couple more keyless OSM-family layers were
+   added in its place. A layer can be a single {url,opts} tile
+   source, or {layers:[{url,opts}, ...]} for a stacked/hybrid
+   basemap (base tiles first, overlays on top).
+   --------------------------------------------------------------- */
+const BASEMAPS = {
+  esriImagery: {
+    label: "Aerial imagery (Esri)",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    opts: { maxZoom:19, attribution:"Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community" }
+  },
+  esriImageryHybrid: {
+    label: "Aerial imagery hybrid, with labels (Esri)",
+    layers: [
+      {
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        opts: { maxZoom:19, attribution:"Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community" }
+      },
+      {
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        opts: { maxZoom:19, attribution:"Labels &copy; Esri" }
+      }
+    ]
+  },
+  esriTopo: {
+    label: "Topographic (Esri)",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+    opts: { maxZoom:19, attribution:"Tiles &copy; Esri" }
+  },
+  osm: {
+    label: "Streets \u2014 OpenStreetMap",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    opts: { maxZoom:19, attribution:"&copy; OpenStreetMap contributors" }
+  },
+  osmTopo: {
+    label: "Topographic (OpenTopoMap, OSM data)",
+    url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    opts: { maxZoom:17, subdomains:"abc", attribution:"Map data &copy; OpenStreetMap contributors, SRTM &mdash; style &copy; OpenTopoMap (CC-BY-SA)" }
+  },
+  osmHot: {
+    label: "Streets \u2014 Humanitarian OSM",
+    url: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+    opts: { maxZoom:20, subdomains:"abc", attribution:"&copy; OpenStreetMap contributors, tiles style by Humanitarian OSM Team, hosted by OpenStreetMap France" }
+  },
+  none: { label: "None (off)" }
+};
+let baseLayer = null;     // single L.tileLayer, or L.layerGroup for a hybrid stack
+
+function populateBasemapSelect(){
+  const sel = document.getElementById("basemapSelect");
+  sel.innerHTML = "";
+  for (const key in BASEMAPS){
+    const opt = document.createElement("option");
+    opt.value = key; opt.textContent = BASEMAPS[key].label;
+    sel.appendChild(opt);
+  }
+}
+
+function setBasemap(key){
+  if (baseLayer){ map.removeLayer(baseLayer); baseLayer = null; }
+  const def = BASEMAPS[key];
+  if (!def || (!def.url && !def.layers)) return; // "none" (or unknown) — leave the map blank
+  if (def.layers){
+    baseLayer = L.layerGroup(def.layers.map(l => L.tileLayer(l.url, l.opts))).addTo(map);
+  } else {
+    baseLayer = L.tileLayer(def.url, def.opts).addTo(map);
+  }
+  if (baseLayer.bringToBack) baseLayer.bringToBack();
+}
+
+/* ---------------------------------------------------------------
+   Map init
+   --------------------------------------------------------------- */
+function initMap(){
+  // zoomControl:false here — the default top-left zoom control sat on top
+  // of the "Colour map by" box, so it's added separately below, pinned
+  // to the bottom-left corner instead.
+  map = L.map("map", { preferCanvas:true, zoomControl:false }).setView([40, -95], 4);
+  L.control.zoom({ position:"bottomleft" }).addTo(map);
+
+  populateBasemapSelect();
+  const sel = document.getElementById("basemapSelect");
+  let saved = "esriImagery";
+  try{ const stored = localStorage.getItem("yep_basemap"); if (stored && BASEMAPS[stored]) saved = stored; }catch(_){}
+  sel.value = saved;
+  setBasemap(saved);
+  sel.addEventListener("change", () => {
+    setBasemap(sel.value);
+    try{ localStorage.setItem("yep_basemap", sel.value); }catch(_){}
+  });
+
+  selectionLayer = new L.FeatureGroup().addTo(map);
+
+  map.on("click", onMapClickForDrawing);
+  map.on("dblclick", onMapDblClickForDrawing);
+  map.on("mousemove", onMapMouseMoveForDrawing);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawMode) cancelDraw(); });
+}
+
+/* ---- custom draw tools (POS box + MAN polygons), no external plugin ---- */
+function setCursorCrosshair(on){ document.getElementById("map").style.cursor = on ? "crosshair" : ""; }
+function showDrawToolbar(label, showFinish){
+  const tb = document.getElementById("drawToolbar");
+  tb.style.display = "flex";
+  document.getElementById("drawToolbarLabel").textContent = label;
+  document.getElementById("btnFinishDraw").style.display = showFinish ? "inline-block" : "none";
+}
+function hideDrawToolbar(){ document.getElementById("drawToolbar").style.display = "none"; }
+
+function startBoxDraw(){
+  cancelDraw();
+  drawMode = "rect"; rectStart = null;
+  map.doubleClickZoom.disable();
+  setCursorCrosshair(true);
+  showDrawToolbar("Click one corner, then the opposite corner.", false);
+}
+function startPolygonDraw(){
+  cancelDraw();
+  drawMode = "polygon"; polyVertices = [];
+  map.doubleClickZoom.disable();
+  setCursorCrosshair(true);
+  showDrawToolbar("Click to add points (3+), then Finish.", true);
+}
+function cancelDraw(){
+  drawMode = null; rectStart = null;
+  if (rectPreviewLayer){ map.removeLayer(rectPreviewLayer); rectPreviewLayer = null; }
+  clearPolyDraftLayers();
+  polyVertices = [];
+  setCursorCrosshair(false);
+  hideDrawToolbar();
+  map.doubleClickZoom.enable();
+}
+function clearPolyDraftLayers(){
+  if (polyPreviewLayer){ map.removeLayer(polyPreviewLayer); polyPreviewLayer = null; }
+  polyVertexMarkers.forEach(m => map.removeLayer(m));
+  polyVertexMarkers = [];
+}
+
+function onMapClickForDrawing(e){
+  if (drawMode === "rect"){
+    if (!rectStart){
+      rectStart = e.latlng;
+      showDrawToolbar("Click the opposite corner to finish.", false);
+    } else {
+      finalizeRect(rectStart, e.latlng);
+    }
+  } else if (drawMode === "polygon"){
+    polyVertices.push(e.latlng);
+    updatePolyDraft();
+  }
+}
+function onMapDblClickForDrawing(e){
+  if (drawMode === "polygon" && polyVertices.length >= 3){
+    finalizePolygon();
+  }
+}
+function onMapMouseMoveForDrawing(e){
+  if (drawMode === "rect" && rectStart){
+    if (rectPreviewLayer) map.removeLayer(rectPreviewLayer);
+    rectPreviewLayer = L.rectangle(L.latLngBounds(rectStart, e.latlng), {
+      color:"#d3a23a", weight:2, dashArray:"4 4", fillOpacity:0.08
+    }).addTo(map);
+  } else if (drawMode === "polygon" && polyVertices.length){
+    updatePolyDraft(e.latlng);
+  }
+}
+function updatePolyDraft(previewPoint){
+  if (polyPreviewLayer){ map.removeLayer(polyPreviewLayer); polyPreviewLayer = null; }
+  polyVertexMarkers.forEach(m => map.removeLayer(m));
+  polyVertexMarkers = [];
+  polyVertices.forEach(v => {
+    polyVertexMarkers.push(
+      L.circleMarker(v, { radius:4, color:"#d3a23a", fillColor:"#d3a23a", fillOpacity:1, weight:1 }).addTo(map)
+    );
+  });
+  const linePts = previewPoint ? [...polyVertices, previewPoint] : polyVertices;
+  if (linePts.length >= 2){
+    polyPreviewLayer = L.polyline(linePts, { color:"#d3a23a", weight:2, dashArray:"4 4" }).addTo(map);
+  }
+}
+
+function finalizeRect(a, b){
+  const bounds = L.latLngBounds(a, b);
+  clearBox(); // only one box at a time
+  posBoxLayer = L.rectangle(bounds, { color:"#93b23f", weight:2, fillOpacity:0.07 });
+  selectionLayer.addLayer(posBoxLayer);
+  posBoxLayer.on("click", (ev) => {
+    L.DomEvent.stopPropagation(ev);
+    if (confirm("Remove this box?")) clearBox();
+  });
+  S.filters.POS.bounds = {
+    latMin:bounds.getSouth(), latMax:bounds.getNorth(), lonMin:bounds.getWest(), lonMax:bounds.getEast()
+  };
+  cancelDraw();
+  document.getElementById("posDrawHint").textContent = "Box set — Apply Filters to use it.";
+  toast("Box added — click it to remove.");
+}
+function clearBox(){
+  if (posBoxLayer){ selectionLayer.removeLayer(posBoxLayer); posBoxLayer = null; }
+  S.filters.POS.bounds = null;
+  const hint = document.getElementById("posDrawHint");
+  if (hint) hint.textContent = "No box drawn yet.";
+}
+
+function finalizePolygon(){
+  const layer = L.polygon(polyVertices, { color:"#c0603a", weight:2, fillOpacity:0.12 });
+  selectionLayer.addLayer(layer);
+  const gj = layer.toGeoJSON();
+  S.manPolygons.push(gj);
+  layer.on("click", (ev) => {
+    L.DomEvent.stopPropagation(ev);
+    if (confirm("Remove this polygon?")){
+      selectionLayer.removeLayer(layer);
+      S.manPolygons = S.manPolygons.filter(p => p !== gj);
+      document.getElementById("manDrawHint").textContent = S.manPolygons.length + " polygon(s) drawn.";
+    }
+  });
+  cancelDraw();
+  document.getElementById("manDrawHint").textContent = S.manPolygons.length + " polygon(s) drawn.";
+  toast("Polygon added — click it to remove.");
+}
+
+document.getElementById("btnFinishDraw").addEventListener("click", () => {
+  if (drawMode === "polygon" && polyVertices.length >= 3) finalizePolygon();
+  else toast("Add at least 3 points first.", true);
+});
+document.getElementById("btnCancelDraw").addEventListener("click", cancelDraw);
+
+/* ---------------------------------------------------------------
+   Filter panel construction
+   --------------------------------------------------------------- */
+function buildFilterList(){
+  const wrap = document.getElementById("filterList");
+  wrap.innerHTML = "";
+  // Render in the current filter order (custom drag order if the user has
+  // one, else the traditional fixed order) so drag position and pipeline
+  // order always match what's on screen.
+  const codes = (S.filterOrder && S.filterOrder.length) ? S.filterOrder : DEFAULT_FILTER_ORDER;
+  for (const code of codes){
+    const [, name, desc, unit, def] = FILTER_DEFS.find(x => x[0] === code);
+    const item = document.createElement("div");
+    item.className = "filter-item";
+    item.dataset.code = code;
+    item.draggable = true;
+
+    const row = document.createElement("div");
+    row.className = "filter-row";
+    let extra = "";
+    if (code === "POS"){
+      extra = `<button type="button" class="btn small draw-btn" data-draw="rectangle">Draw box</button>`;
+    } else if (code === "MAN"){
+      extra = `<button type="button" class="btn small draw-btn" data-draw="polygon">Draw polygon</button>`;
+    } else {
+      extra = `<input type="number" id="filterVal_${code}" step="any" value="${def===null?'':def}" placeholder="${unit}">`;
+    }
+    row.innerHTML = `
+      <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+      <input type="checkbox" id="filterOn_${code}">
+      <span class="fname">${code}</span>
+      <span class="fdesc">${desc}</span>
+      ${extra}
+    `;
+    item.appendChild(row);
+    if (code === "POS"){
+      const hint = document.createElement("div");
+      hint.className = "hint"; hint.id = "posDrawHint";
+      hint.textContent = "No box drawn yet.";
+      item.appendChild(hint);
+    }
+    if (code === "MAN"){
+      const hint = document.createElement("div");
+      hint.className = "hint"; hint.id = "manDrawHint";
+      hint.textContent = "0 polygon(s) drawn.";
+      item.appendChild(hint);
+    }
+    wrap.appendChild(item);
+  }
+  wrap.querySelectorAll("[data-draw]").forEach(b => {
+    b.addEventListener("click", () => {
+      if (b.dataset.draw === "rectangle") startBoxDraw();
+      else if (b.dataset.draw === "polygon") startPolygonDraw();
+    });
+  });
+  wireFilterDragAndDrop(wrap);
+}
+buildFilterList();
+
+/* ---------------------------------------------------------------
+   Filter reordering — plain HTML5 drag & drop, no dependency.
+   Dropping updates S.filterOrder from the resulting DOM order;
+   whether that order is actually used by the pipeline is controlled
+   separately by the "apply in the order listed" checkbox.
+   --------------------------------------------------------------- */
+let draggedFilterItem = null;
+function wireFilterDragAndDrop(wrap){
+  wrap.querySelectorAll(".filter-item").forEach(item => {
+    item.addEventListener("dragstart", (e) => {
+      draggedFilterItem = item;
+      item.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try{ e.dataTransfer.setData("text/plain", item.dataset.code); }catch(_){}
+    });
+    item.addEventListener("dragend", () => {
+      item.classList.remove("dragging");
+      wrap.querySelectorAll(".filter-item").forEach(el => el.classList.remove("drag-over-top","drag-over-bottom"));
+      draggedFilterItem = null;
+      syncFilterOrderFromDOM();
+    });
+    item.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!draggedFilterItem || draggedFilterItem === item) return;
+      const rect = item.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      item.classList.toggle("drag-over-top", before);
+      item.classList.toggle("drag-over-bottom", !before);
+    });
+    item.addEventListener("dragleave", () => {
+      item.classList.remove("drag-over-top","drag-over-bottom");
+    });
+    item.addEventListener("drop", (e) => {
+      e.preventDefault();
+      item.classList.remove("drag-over-top","drag-over-bottom");
+      if (!draggedFilterItem || draggedFilterItem === item) return;
+      const rect = item.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      wrap.insertBefore(draggedFilterItem, before ? item : item.nextSibling);
+    });
+  });
+}
+function syncFilterOrderFromDOM(){
+  const wrap = document.getElementById("filterList");
+  S.filterOrder = [...wrap.querySelectorAll(".filter-item")].map(el => el.dataset.code);
+  if (S.customFilterOrder) recompute();
+}
+document.getElementById("customFilterOrderEnabled").addEventListener("change", (e) => {
+  S.customFilterOrder = e.target.checked;
+  recompute();
+});
+
+function readFiltersFromUI(){
+  for (const [code] of FILTER_DEFS){
+    const chk = document.getElementById("filterOn_"+code);
+    S.filters[code].enabled = chk.checked;
+    const inp = document.getElementById("filterVal_"+code);
+    if (inp) S.filters[code].val = inp.value === "" ? null : parseFloat(inp.value);
+  }
+}
+
+/* ---------------------------------------------------------------
+   Column mapping UI
+   --------------------------------------------------------------- */
+const ROLE_LIST = [
+  ["lon","Longitude"], ["lat","Latitude"],
+  ["yieldDry","Dry/Processed Yield"], ["yieldWet","Wet/Unprocessed Yield"],
+  ["velocity","Velocity"],
+  ["swath","Swath width"], ["moisture","Moisture"], ["timestamp","Timestamp"], ["machine","Machine ID"],
+];
+// The primary yield column drives everything unit-sensitive: pass/outlier
+// detection thresholds (Max/Min/Std.-dev Yield), map colouring, and the
+// "before/after" summary stats. The other mapped yield column (if any)
+// still passes through every row-removal filter and the grain-flow-delay
+// shift, producing its own cleaned attribute — it just isn't what
+// threshold-style filters are judged against (its units may not even be
+// the same kind of quantity, e.g. a wet flow-rate vs. a dry per-acre rate).
+function getPrimaryYieldCol(){
+  const { yieldDry, yieldWet, primaryYield } = S.mapping;
+  if (primaryYield === "wet" && yieldWet) return yieldWet;
+  if (primaryYield === "dry" && yieldDry) return yieldDry;
+  return yieldDry || yieldWet || null;
+}
+function getSecondaryYieldCol(){
+  const { yieldDry, yieldWet, primaryYield } = S.mapping;
+  const primary = getPrimaryYieldCol();
+  if (primary === yieldDry) return yieldWet || null;
+  if (primary === yieldWet) return yieldDry || null;
+  return null;
+}
+function syncPrimaryYieldControls(){
+  const rWrap = document.getElementById("primaryYieldRow");
+  if (!rWrap) return;
+  const dryOk = !!S.mapping.yieldDry, wetOk = !!S.mapping.yieldWet;
+  const rDry = document.getElementById("primaryYieldDry"), rWet = document.getElementById("primaryYieldWet");
+  rDry.disabled = !dryOk; rWet.disabled = !wetOk;
+  if (!S.mapping.primaryYield || (S.mapping.primaryYield === "dry" && !dryOk) || (S.mapping.primaryYield === "wet" && !wetOk)){
+    S.mapping.primaryYield = dryOk ? "dry" : (wetOk ? "wet" : "dry");
+  }
+  rDry.checked = S.mapping.primaryYield === "dry";
+  rWet.checked = S.mapping.primaryYield === "wet";
+  rWrap.style.display = (dryOk || wetOk) ? "flex" : "none";
+  // Wet-basis Post-Cal targets only make sense — and are only allowed to
+  // be typed in — once a Wet/Unprocessed Yield column is actually mapped.
+  const pcTotalWet = document.getElementById("pcTotalWet"), pcWetAvg = document.getElementById("pcWetAvg");
+  if (pcTotalWet) pcTotalWet.disabled = !wetOk;
+  if (pcWetAvg) pcWetAvg.disabled = !wetOk;
+  if (!wetOk && pcTotalWet) pcTotalWet.value = "";
+  if (!wetOk && pcWetAvg) pcWetAvg.value = "";
+}
+function buildMappingUI(){
+  const grid = document.getElementById("mappingGrid");
+  grid.innerHTML = "";
+  for (const [role, label] of ROLE_LIST){
+    const rn = document.createElement("div");
+    rn.className = "rname"; rn.textContent = label;
+    const sel = document.createElement("select");
+    sel.id = "map_"+role;
+    const noneOpt = document.createElement("option");
+    noneOpt.value = ""; noneOpt.textContent = "(none)";
+    sel.appendChild(noneOpt);
+    for (const col of S.columns){
+      const o = document.createElement("option");
+      o.value = col; o.textContent = col;
+      if (S.mapping[role] === col) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", () => { S.mapping[role] = sel.value || null; onMappingChanged(); });
+    grid.appendChild(rn); grid.appendChild(sel);
+  }
+  document.getElementById("mappingSection").style.display = "block";
+
+  const unitOpts = {
+    unitYield: [["bu/ac","bu/ac"],["lbs/ac","lbs/ac"],["kg/ha","kg/ha"],["t/ha","t/ha"]],
+    unitVelocity: [["mph","mph"],["km/h","km/h"],["ft/s","ft/s"]],
+    unitSwath: [["ft","ft"],["in","in"],["m","m"]],
+    unitAltitude: [["ft","ft"],["m","m"]],
+  };
+  for (const [id, opts] of Object.entries(unitOpts)){
+    const sel = document.getElementById(id);
+    sel.innerHTML = "";
+    for (const [v,l] of opts){ const o=document.createElement("option"); o.value=v; o.textContent=l; sel.appendChild(o); }
+  }
+  document.getElementById("unitYield").value = S.units.yield;
+  document.getElementById("unitVelocity").value = S.units.velocity;
+  document.getElementById("unitSwath").value = S.units.swath;
+  document.getElementById("unitAltitude").value = S.units.altitude;
+  ["unitYield","unitVelocity","unitSwath","unitAltitude"].forEach(id=>{
+    document.getElementById(id).addEventListener("change", e => {
+      const key = id.replace("unit","").toLowerCase();
+      S.units[key] = e.target.value;
+    });
+  });
+  syncPrimaryYieldControls();
+}
+function onMappingChanged(){
+  syncPrimaryYieldControls();
+  populateAttrSelect();
+  populateGeotiffAttrList();
+}
+document.getElementById("primaryYieldDry").addEventListener("change", () => { S.mapping.primaryYield = "dry"; onMappingChanged(); });
+document.getElementById("primaryYieldWet").addEventListener("change", () => { S.mapping.primaryYield = "wet"; onMappingChanged(); });
+
+/* ---------------------------------------------------------------
+   Import handlers
+   --------------------------------------------------------------- */
+document.getElementById("fileAgLeader").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const text = await f.text();
+  const rows = parseAgLeaderText(text);
+  if (!rows.length){ toast("No valid AgLeader rows found in this file.", true); return; }
+  S.rawRows = rows;
+  S.columns = AGL_COLS.concat(["Timestamp","Speed_mph","Swath_ft","Yield_bu_ac"]);
+  S.sourceFormat = "AgLeader Advanced Text"; S.sourceFilename = f.name;
+  S.mapping = { lon:"Longitude", lat:"Latitude", yieldDry:"Yield_bu_ac", yieldWet:"Grain_Flow_lbs_sec", primaryYield:"dry",
+                velocity:"Speed_mph", swath:"Swath_ft", moisture:"Moisture", timestamp:"Timestamp", machine:"Monitor_Name" };
+  S.units = { yield:"bu/ac", velocity:"mph", swath:"ft", altitude:"ft" };
+  finishImport();
+});
+
+document.getElementById("fileCsv").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  Papa.parse(f, {
+    header:true, skipEmptyLines:true, dynamicTyping:false,
+    complete: (res) => {
+      if (!res.data.length){ toast("No rows parsed from this file.", true); return; }
+      const columns = res.meta.fields;
+      const numericCols = coerceNumeric(res.data, columns);
+      S.rawRows = res.data; S.columns = columns; S.numericCols = [...numericCols];
+      S.sourceFormat = "Delimited (CSV/TXT)"; S.sourceFilename = f.name;
+      S.mapping = {
+        lon: detectColumn(columns,"longitude"), lat: detectColumn(columns,"latitude"),
+        yieldDry: detectColumn(columns,"yieldDry"), yieldWet: detectColumn(columns,"yieldWet"),
+        primaryYield: detectColumn(columns,"yieldDry") ? "dry" : (detectColumn(columns,"yieldWet") ? "wet" : "dry"),
+        velocity: detectColumn(columns,"velocity"),
+        swath: detectColumn(columns,"swath"), moisture: detectColumn(columns,"moisture"),
+        timestamp: detectColumn(columns,"timestamp"), machine: detectColumn(columns,"machine"),
+      };
+      finishImport();
+    },
+    error: (err) => toast("CSV parse error: " + err.message, true),
+  });
+});
+
+document.getElementById("fileGeojson").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try{
+    const gj = JSON.parse(await f.text());
+    ingestFeatureCollection(gj, f.name, "GeoJSON");
+  } catch(err){ toast("GeoJSON parse error: " + err.message, true); }
+});
+
+/* ---------------------------------------------------------------
+   Shared ingest for any GeoJSON-shaped FeatureCollection, used by
+   both the GeoJSON importer and the Shapefile importer below.
+   Point features use their coordinates directly. Polygon/
+   MultiPolygon features keep their full ring geometry (__poly__)
+   for accurate map display and GeoJSON/Shapefile export — this
+   matters for as-harvested "yield cell" shapefiles, where each
+   record's footprint (not just its centre) is the actual data.
+   Filtering, balancing, and GeoTIFF interpolation still key off
+   each feature's centroid (__lon__/__lat__), since those are
+   inherently point-based operations.
+   --------------------------------------------------------------- */
+function ingestFeatureCollection(gj, filename, formatLabel){
+  const feats = gj.type === "FeatureCollection" ? gj.features : [gj];
+  const rows = [];
+  const propKeys = new Set();
+  let polygonCount = 0, pointCount = 0, skipped = 0;
+  for (const feat of feats){
+    const g = feat.geometry;
+    if (!g) { skipped++; continue; }
+    let lon, lat, poly = null;
+    if (g.type === "Point"){
+      [lon, lat] = g.coordinates; pointCount++;
+    } else if (g.type === "Polygon" || g.type === "MultiPolygon"){
+      const rings = mainPolygonRings(feat);
+      if (!rings) { skipped++; continue; }
+      const c = centroidOfRing(rings[0]);
+      [lon, lat] = c; poly = rings; polygonCount++;
+    } else { skipped++; continue; }
+    const row = Object.assign({ __lon__: lon, __lat__: lat }, feat.properties || {});
+    if (poly) row.__poly__ = poly;
+    Object.keys(feat.properties || {}).forEach(k => propKeys.add(k));
+    rows.push(row);
+  }
+  if (!rows.length){ toast("No Point or Polygon features found in this file.", true); return; }
+  const columns = ["__lon__", "__lat__", ...propKeys];
+  const numericCols = coerceNumeric(rows, columns);
+  S.rawRows = rows; S.columns = columns; S.numericCols = [...numericCols];
+  S.sourceFormat = polygonCount && !pointCount ? formatLabel + " (polygons)" : formatLabel + " (points)";
+  S.sourceFilename = filename;
+  S.mapping = {
+    lon:"__lon__", lat:"__lat__",
+    yieldDry: detectColumn(columns,"yieldDry"), yieldWet: detectColumn(columns,"yieldWet"),
+    primaryYield: detectColumn(columns,"yieldDry") ? "dry" : (detectColumn(columns,"yieldWet") ? "wet" : "dry"),
+    velocity: detectColumn(columns,"velocity"),
+    swath: detectColumn(columns,"swath"), moisture: detectColumn(columns,"moisture"),
+    timestamp: detectColumn(columns,"timestamp"), machine: detectColumn(columns,"machine"),
+  };
+  finishImport();
+  if (polygonCount){
+    toast(`Imported ${polygonCount} polygon feature(s) — footprints kept for the map and GeoJSON/Shapefile export; centroid used for filtering` + (pointCount ? ` + ${pointCount} point(s)` : "") + (skipped ? `; ${skipped} feature(s) skipped.` : "."));
+  }
+}
+
+/* ---------------------------------------------------------------
+   shpjs returns a single FeatureCollection when a zip contains one
+   recognisable layer, but an ARRAY when it contains more than one
+   distinct base filename — including harmless sidecars like a John
+   Deere "-Metadata.json" file, which shpjs tries to treat as its
+   own (empty) layer. Blindly taking index 0 is wrong: the real data
+   can land at any index. Filter down to genuine non-empty
+   FeatureCollections and pick the largest.
+   --------------------------------------------------------------- */
+function pickShpLayer(gj){
+  const candidates = Array.isArray(gj) ? gj : [gj];
+  const valid = candidates.filter(item =>
+    item && item.type === "FeatureCollection" && Array.isArray(item.features) && item.features.length > 0
+  );
+  if (!valid.length) return { layer:null, extraCount:0 };
+  valid.sort((a, b) => b.features.length - a.features.length);
+  return { layer:valid[0], extraCount:valid.length - 1 };
+}
+
+/* ---------------------------------------------------------------
+   Shapefile reading — shared by the data importer and the boundary
+   importer. Prefers a single .zip (shp+dbf+shx[+prj]); also accepts
+   the loose/unzipped files selected together via a multi-select
+   input (e.g. Windows Explorer's native shapefile export, which
+   doesn't zip anything up).
+   --------------------------------------------------------------- */
+async function readShapefileFiles(files){
+  if (typeof shp !== "function") throw new Error("Shapefile reader failed to load — check your network connection and reload.");
+  if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip")){
+    const raw = await shp(await files[0].arrayBuffer());
+    const { layer, extraCount } = pickShpLayer(raw);
+    if (!layer) throw new Error("No readable shapefile layer found in this .zip (check that it contains a .shp + .dbf pair).");
+    if (extraCount) toast(`This .zip contained ${extraCount + 1} candidate layers — used the largest (${layer.features.length.toLocaleString()} features).`);
+    return layer;
+  }
+  const byExt = (ext) => files.find(f => f.name.toLowerCase().endsWith(ext));
+  const shpFile = byExt(".shp"), dbfFile = byExt(".dbf"), prjFile = byExt(".prj");
+  if (!shpFile) throw new Error("Select a .zip, or the unzipped .shp (+ .dbf, .shx, .prj) files together.");
+  const shpBuf = await shpFile.arrayBuffer();
+  const prjText = prjFile ? await prjFile.text() : undefined;
+  const geom = shp.parseShp(shpBuf, prjText);
+  if (dbfFile){
+    const dbfBuf = await dbfFile.arrayBuffer();
+    return shp.combine([geom, shp.parseDbf(dbfBuf)]);
+  }
+  return { type:"FeatureCollection", features: geom.map(g => ({ type:"Feature", geometry:g, properties:{} })) };
+}
+
+document.getElementById("fileShapefile").addEventListener("change", async (e) => {
+  const files = [...e.target.files]; if (!files.length) return;
+  try{
+    const gj = await readShapefileFiles(files);
+    const label = files.length === 1 ? files[0].name : files.map(f=>f.name).join(" + ");
+    ingestFeatureCollection(gj, label, "Shapefile");
+  } catch(err){ toast("Shapefile import error: " + err.message, true); }
+  e.target.value = "";
+});
+
+function finishImport(){
+  document.getElementById("importStatusSection").style.display = "block";
+  document.getElementById("stFile").textContent = S.sourceFilename;
+  document.getElementById("stFormat").textContent = S.sourceFormat;
+  document.getElementById("stRecords").textContent = S.rawRows.length.toLocaleString();
+  document.getElementById("stColumns").textContent = S.columns.length;
+  buildMappingUI();
+  populateAttrSelect();
+  populateGeotiffAttrList();
+  document.getElementById("sbRecords").textContent = S.rawRows.length.toLocaleString();
+  document.getElementById("dotData").classList.add("on");
+  recompute();
+  fitMapToData();
+  toast(`Loaded ${S.rawRows.length.toLocaleString()} records from ${S.sourceFilename}`);
+}
+
+/* ---------------------------------------------------------------
+   Pipeline: transects -> filters -> balance
+   --------------------------------------------------------------- */
+function runPipeline({ trace=false } = {}){
+  if (!S.rawRows.length) return { rows: [], trace: [] };
+  const t = [];
+  let rows = S.rawRows.map(r => Object.assign({}, r)); // fresh copy each run
+  const { lon, lat, timestamp, velocity, machine, moisture, swath } = S.mapping;
+
+  if (lon && lat){
+    computeTransects(rows, lon, lat, timestamp, velocity, machine);
+  }
+  t.push({ step:"IMPORT", label:"Records imported", count: rows.length });
+
+  const yieldCol = getPrimaryYieldCol();
+  if (!yieldCol){
+    return { rows, trace: t, error:"No yield column mapped — map a Dry/Processed or Wet/Unprocessed Yield column under Import ▸ Column mapping." };
+  }
+  // The non-primary mapped yield column, if any — carried through every
+  // row-removal filter and the grain-flow-delay shift alongside the
+  // primary, but never itself the target of a value threshold (its units
+  // may not even be the same kind of quantity as the primary's).
+  const secondaryYieldCol = getSecondaryYieldCol();
+
+  // Balancing runs first — it corrects date/machine/moisture-meter
+  // differences between combines before any filter (especially the
+  // std-deviation-of-yield filter) sees the data. Balancing only ever
+  // touches the primary yield column.
+  let workingYieldCol = yieldCol;
+  S.balanceFactors = {};
+  if (S.balance.dateEnabled && S.balance.dateBase && timestamp){
+    const res = balanceByGroup(rows, workingYieldCol, r => dateKey(r[timestamp]), S.balance.dateBase);
+    if (res.error) toast(res.error, true);
+    else {
+      for (const r of rows) r.yield_balanced = r[res.balancedCol];
+      workingYieldCol = "yield_balanced";
+      S.balanceFactors.date = res.factors;
+      t.push({ step:"BAL-DATE", label:"Date balancing applied", count: rows.length });
+    }
+  }
+  if (S.balance.machineEnabled && S.balance.machineBase && machine){
+    const res = balanceByGroup(rows, workingYieldCol, r => String(r[machine]), S.balance.machineBase);
+    if (res.error) toast(res.error, true);
+    else {
+      for (const r of rows) r.yield_balanced = r[res.balancedCol];
+      workingYieldCol = "yield_balanced";
+      S.balanceFactors.machine = res.factors;
+      t.push({ step:"BAL-MACHINE", label:"Machine balancing applied", count: rows.length });
+    }
+  }
+  if (S.balance.moistureEnabled && S.balance.moistureBase && machine && moisture){
+    const res = balanceByMoisture(rows, workingYieldCol, moisture, r => String(r[machine]), S.balance.moistureBase);
+    if (res.error) toast(res.error, true);
+    else {
+      for (const r of rows) r.yield_balanced = r[res.balancedCol];
+      workingYieldCol = "yield_balanced";
+      S.balanceFactors.moisture = res.factors;
+      t.push({ step:"BAL-MOISTURE", label:"Moisture balancing applied", count: rows.length });
+    }
+  }
+
+  // Filters — run against the balanced yield column when balancing
+  // produced one, so filters like STDY judge the corrected values.
+  // Order is either the traditional fixed USDA Yield Editor order, or
+  // the user's drag-reordered sequence from the Filters tab, depending
+  // on the "apply in the order listed" checkbox.
+  const order = (S.customFilterOrder && S.filterOrder && S.filterOrder.length)
+    ? S.filterOrder.filter(code => DEFAULT_FILTER_ORDER.includes(code))
+    : DEFAULT_FILTER_ORDER;
+  for (const code of order){
+    const f = S.filters[code];
+    if (!f.enabled) continue;
+    let next = rows;
+    if (code === "DELAY"){
+      // Shifting is purely a re-index by N observations, not a
+      // unit-specific threshold — so it's meaningful to apply to the
+      // secondary yield column and Moisture at the same time, using the
+      // exact same shift, producing their own delay-corrected values.
+      const extraCols = [secondaryYieldCol, moisture].filter(Boolean);
+      next = Filters.DELAY(rows, workingYieldCol, f.val || 0, extraCols);
+    }
+    else if (code === "START") next = Filters.START(rows, f.val || 0);
+    else if (code === "END") next = Filters.END(rows, f.val || 0);
+    else if (code === "STARTSEC") next = Filters.STARTSEC(rows, timestamp, f.val);
+    else if (code === "ENDSEC") next = Filters.ENDSEC(rows, timestamp, f.val);
+    else if (code === "MAXV") next = Filters.MAXV(rows, velocity, f.val);
+    else if (code === "MINV") next = Filters.MINV(rows, velocity, f.val);
+    else if (code === "SMV") next = Filters.SMV(rows, velocity, f.val);
+    else if (code === "MINS") next = Filters.MINS(rows, swath, f.val);
+    else if (code === "MAXY") next = Filters.MAXY(rows, workingYieldCol, f.val);
+    else if (code === "MINY") next = Filters.MINY(rows, workingYieldCol, f.val);
+    else if (code === "STDY") next = Filters.STDY(rows, workingYieldCol, f.val);
+    else if (code === "POS") next = Filters.POS(rows, lat, lon, f.bounds);
+    else if (code === "MAN"){
+      if (S.manPolygons.length && lat && lon){
+        const inAny = (la, lo) => S.manPolygons.some(poly => pointInPolygonFeature(lo, la, poly));
+        next = Filters.MAN(rows, lat, lon, inAny);
+      }
+    }
+    rows = next;
+    t.push({ step:code, label: FILTER_DEFS.find(x=>x[0]===code)[1], count: rows.length });
+  }
+
+  // Every row remaining at this point has survived the exact same
+  // row-removal filters regardless of which yield column drove them, and
+  // the grain-flow-delay shift (if enabled) has already been applied to
+  // both yield columns and Moisture together — so mirror the primary's
+  // dry/wet identity and Moisture out as explicitly-named "clean"
+  // attributes for whichever platforms need the wet + dry + moisture
+  // trio to build their own yield maps.
+  const dryRawCol = S.mapping.yieldDry ? (yieldCol === S.mapping.yieldDry ? workingYieldCol : S.mapping.yieldDry) : null;
+  const wetRawCol = S.mapping.yieldWet ? (yieldCol === S.mapping.yieldWet ? workingYieldCol : S.mapping.yieldWet) : null;
+  for (const r of rows){
+    if (dryRawCol) r.yield_dry_clean = r[dryRawCol];
+    if (wetRawCol) r.yield_wet_clean = r[wetRawCol];
+    if (moisture) r.moisture_clean = r[moisture];
+  }
+  if (dryRawCol || wetRawCol || moisture){
+    t.push({ step:"CLEANATTRS", label:"Cleaned wet/dry yield + moisture attributes generated", count: rows.length });
+  }
+
+  // Post-harvest calibration — runs last, scaling the whole (already
+  // filtered and balanced) dataset by one factor to match a known
+  // scale-ticket total or average. The resulting factor is applied to
+  // the primary yield column (into yield_balanced) and, to keep the
+  // wet/dry/moisture trio mutually consistent, to whichever of
+  // yield_dry_clean/yield_wet_clean isn't already the primary.
+  S.postCalResult = null;
+  if (S.postCal.enabled){
+    const res = applyPostCalibration(rows, S.postCal, {
+      dryCol: dryRawCol ? "yield_dry_clean" : null, wetCol: wetRawCol ? "yield_wet_clean" : null,
+      moistureCol: moisture, boundary: S.boundary, swathCol: swath, swathUnit: S.units.swath, velCol: velocity,
+    });
+    if (res.error) toast(res.error, true);
+    else if (res.factor !== null && res.factor !== undefined){
+      for (const r of rows){
+        const v = parseFloat(r[workingYieldCol]);
+        r.yield_balanced = isFinite(v) ? v * res.factor : NaN;
+        r.postcal_factor = res.factor;
+        if (dryRawCol){ const dv = parseFloat(r.yield_dry_clean); if (isFinite(dv)) r.yield_dry_clean = dv * res.factor; }
+        if (wetRawCol){ const wv = parseFloat(r.yield_wet_clean); if (isFinite(wv)) r.yield_wet_clean = wv * res.factor; }
+      }
+      workingYieldCol = "yield_balanced";
+      S.postCalResult = res;
+      t.push({ step:"POSTCAL", label:"Post-harvest calibration applied", count: rows.length });
+    }
+  }
+
+  S.workingYieldCol = workingYieldCol;
+  return { rows, trace: t };
+}
+
+function dateKey(ts){
+  if (!ts) return "unknown";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return String(ts).slice(0,10);
+  return d.toISOString().slice(0,10);
+}
+
+function recompute(){
+  const { rows, trace, error } = runPipeline();
+  if (error){ toast(error, true); }
+  S.filteredRows = rows;
+  S.trace = trace;
+  document.getElementById("sbFiltered").textContent = rows.length.toLocaleString();
+  document.getElementById("dotFilter").classList.toggle("on", rows.length > 0);
+  const hint = document.getElementById("filterResultHint");
+  if (hint) hint.textContent = trace.map(t=>`${t.step}: ${t.count.toLocaleString()}`).join("  →  ");
+  const pcHint = document.getElementById("postCalResultHint");
+  if (pcHint){
+    if (!S.postCal.enabled) pcHint.textContent = "";
+    else if (S.postCalResult && S.postCalResult.factor !== null && S.postCalResult.factor !== undefined){
+      pcHint.textContent = `Applied factor: ×${S.postCalResult.factor.toFixed(4)}  (current wet mean: ${fmtNum(S.postCalResult.currentMeanWet,2)}${S.postCalResult.acres?`, ~${fmtNum(S.postCalResult.acres,1)} ac (${S.postCalResult.acresSource==="boundary"?"boundary":"est. from swath×speed"})`:""})`;
+    } else pcHint.textContent = "Enabled, but no target value entered yet.";
+  }
+  populateBalanceOptions();
+  renderPoints();
+  renderSummaryPreview();
+}
+
+document.getElementById("btnApplyFilters").addEventListener("click", () => { readFiltersFromUI(); recompute(); });
+document.getElementById("btnApplyBalance").addEventListener("click", () => { readBalanceFromUI(); recompute(); });
+document.getElementById("btnApplyPostCal").addEventListener("click", () => { readPostCalFromUI(); recompute(); });
+
+function readBalanceFromUI(){
+  S.balance.dateEnabled = document.getElementById("balDateEnabled").checked;
+  S.balance.dateBase = document.getElementById("balDateBase").value || null;
+  S.balance.machineEnabled = document.getElementById("balMachineEnabled").checked;
+  S.balance.machineBase = document.getElementById("balMachineBase").value || null;
+  S.balance.moistureEnabled = document.getElementById("balMoistureEnabled").checked;
+  S.balance.moistureBase = document.getElementById("balMoistureBase").value || null;
+}
+
+function readPostCalFromUI(){
+  const v = id => { const el = document.getElementById(id); return el.value === "" ? null : parseFloat(el.value); };
+  S.postCal.enabled = document.getElementById("pcEnabled").checked;
+  S.postCal.totalWet = v("pcTotalWet");
+  S.postCal.wetAvg = v("pcWetAvg");
+  S.postCal.totalDry = v("pcTotalDry");
+  S.postCal.dryAvg = v("pcDryAvg");
+}
+
+function populateBalanceOptions(){
+  const { timestamp, machine } = S.mapping;
+  const dateSel = document.getElementById("balDateBase");
+  const machSel = document.getElementById("balMachineBase");
+  const moistSel = document.getElementById("balMoistureBase");
+  const prevDate = dateSel.value || S.balance.dateBase;
+  const prevMach = machSel.value || S.balance.machineBase;
+  const prevMoist = (moistSel.value || S.balance.moistureBase);
+  dateSel.innerHTML = ""; machSel.innerHTML = ""; moistSel.innerHTML = "";
+  if (timestamp){
+    const dates = [...new Set(S.filteredRows.map(r => dateKey(r[timestamp])))].sort();
+    for (const d of dates){ const o=document.createElement("option"); o.value=d; o.textContent=d; dateSel.appendChild(o); }
+    if (dates.includes(prevDate)) dateSel.value = prevDate;
+  }
+  if (machine){
+    const machs = [...new Set(S.filteredRows.map(r => String(r[machine])))].sort();
+    for (const m of machs){ const o=document.createElement("option"); o.value=m; o.textContent=m; machSel.appendChild(o); }
+    if (machs.includes(prevMach)) machSel.value = prevMach;
+    for (const m of machs){ const o=document.createElement("option"); o.value=m; o.textContent=m; moistSel.appendChild(o); }
+    if (machs.includes(prevMoist)) moistSel.value = prevMoist;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Map rendering — colour-coded points
+   --------------------------------------------------------------- */
+function populateAttrSelect(){
+  const sel = document.getElementById("attrSelect");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  const candidates = [];
+  const primary = getPrimaryYieldCol();
+  if (primary) candidates.push(primary);
+  candidates.push("yield_balanced", "yield_dry_clean", "yield_wet_clean", "moisture_clean");
+  if (S.mapping.yieldDry && !candidates.includes(S.mapping.yieldDry)) candidates.push(S.mapping.yieldDry);
+  if (S.mapping.yieldWet && !candidates.includes(S.mapping.yieldWet)) candidates.push(S.mapping.yieldWet);
+  for (const c of S.numericCols) if (!candidates.includes(c)) candidates.push(c);
+  for (const c of candidates){
+    const o = document.createElement("option"); o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  }
+  if (candidates.includes(prev)) sel.value = prev;
+  S.activeAttr = sel.value || null;
+}
+document.getElementById("attrSelect").addEventListener("change", (e) => {
+  S.activeAttr = e.target.value; renderPoints();
+});
+
+function colorForRatio(t){
+  // red (low) -> gold (mid) -> green (high), t in [0,1]
+  const stops = [[192,57,43],[226,185,59],[63,174,76]];
+  const seg = t <= 0.5 ? 0 : 1;
+  const localT = t <= 0.5 ? t/0.5 : (t-0.5)/0.5;
+  const a = stops[seg], b = stops[seg+1] || stops[seg];
+  const r = Math.round(a[0] + (b[0]-a[0])*localT);
+  const g = Math.round(a[1] + (b[1]-a[1])*localT);
+  const bch = Math.round(a[2] + (b[2]-a[2])*localT);
+  return `rgb(${r},${g},${bch})`;
+}
+
+function renderPoints(){
+  if (pointLayer) map.removeLayer(pointLayer);
+  const { lon, lat } = S.mapping;
+  const attr = S.activeAttr;
+  if (!lon || !lat || !S.filteredRows.length){
+    document.getElementById("legendMin").textContent = "—";
+    document.getElementById("legendMax").textContent = "—";
+    return;
+  }
+  const vals = attr ? S.filteredRows.map(r=>parseFloat(r[attr])).filter(isFinite) : [];
+  let lo = 0, hi = 1;
+  if (vals.length){
+    const sorted = [...vals].sort((a,b)=>a-b);
+    lo = sorted[Math.floor(sorted.length*0.02)];
+    hi = sorted[Math.ceil(sorted.length*0.98)-1] ?? sorted[sorted.length-1];
+    if (hi <= lo) hi = lo + 1;
+  }
+  document.getElementById("legendTitle").textContent = attr || "—";
+  document.getElementById("legendMin").textContent = fmtNum(lo);
+  document.getElementById("legendMax").textContent = fmtNum(hi);
+
+  const layers = [];
+  // Downsample rendering for very large sets to keep the map responsive
+  const cap = 40000;
+  const step = Math.max(1, Math.floor(S.filteredRows.length / cap));
+  for (let i = 0; i < S.filteredRows.length; i += step){
+    const r = S.filteredRows[i];
+    const v = attr ? parseFloat(r[attr]) : null;
+    const t = (v!==null && isFinite(v)) ? Math.max(0,Math.min(1,(v-lo)/(hi-lo))) : null;
+    const color = t!==null ? colorForRatio(t) : "#93b23f";
+    let m;
+    if (r.__poly__ && r.__poly__.length){
+      // real polygon footprint (e.g. an as-harvested yield cell) — draw the actual shape
+      const latlngs = r.__poly__.map(ring => ring.map(([x, y]) => [y, x])); // [lon,lat] -> Leaflet [lat,lon]
+      m = L.polygon(latlngs, { color:"#00000030", weight:0.5, fillColor:color, fillOpacity:0.88 });
+    } else {
+      const la = parseFloat(r[lat]), lo_ = parseFloat(r[lon]);
+      if (!isFinite(la) || !isFinite(lo_)) continue;
+      m = L.circleMarker([la, lo_], { radius:3, color, fillColor:color, fillOpacity:0.85, weight:0, opacity:0.9 });
+    }
+    m.bindPopup(popupHtml(r, attr));
+    layers.push(m);
+  }
+  pointLayer = L.layerGroup(layers).addTo(map);
+}
+
+function popupHtml(row, attr){
+  const parts = [];
+  const { lon, lat, timestamp, machine } = S.mapping;
+  if (attr) parts.push(`<b>${attr}</b>: ${fmtNum(row[attr],2)}`);
+  if (lat && lon) parts.push(`lat/lon: ${fmtNum(row[lat],5)}, ${fmtNum(row[lon],5)}`);
+  if (timestamp && row[timestamp]) parts.push(`time: ${row[timestamp]}`);
+  if (machine && row[machine]) parts.push(`machine: ${row[machine]}`);
+  return parts.join("<br>");
+}
+
+function fitMapToData(){
+  const { lon, lat } = S.mapping;
+  if (!lon || !lat || !S.rawRows.length) return;
+  const pts = S.rawRows.slice(0, 5000)
+    .map(r => [parseFloat(r[lat]), parseFloat(r[lon])])
+    .filter(p => isFinite(p[0]) && isFinite(p[1]));
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding:[30,30] });
+}
+
+/* ---------------------------------------------------------------
+   Boundary import
+   --------------------------------------------------------------- */
+document.getElementById("fileBoundary").addEventListener("change", async (e) => {
+  const files = [...e.target.files]; if (!files.length) return;
+  try{
+    let gj;
+    const looksLikeShp = files.some(f => f.name.toLowerCase().endsWith(".shp")) ||
+                         (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip"));
+    if (looksLikeShp){
+      gj = await readShapefileFiles(files);
+    } else if (files.length === 1){
+      gj = JSON.parse(await files[0].text());
+    } else {
+      throw new Error("Select a single GeoJSON file, a .zip, or the unzipped .shp (+ .dbf, .shx, .prj) files together.");
+    }
+    const label = files.length === 1 ? files[0].name : files.map(f=>f.name).join(" + ");
+    setBoundary(gj, label);
+  } catch(err){ toast("Boundary import error: " + err.message, true); }
+  e.target.value = "";
+});
+document.getElementById("btnClearBoundary").addEventListener("click", () => {
+  S.boundary = null; S.boundaryFilename = "";
+  if (boundaryLayer){ map.removeLayer(boundaryLayer); boundaryLayer = null; }
+  document.getElementById("stBoundary").textContent = "none";
+  document.getElementById("stBoundaryArea").textContent = "—";
+  document.getElementById("sbBoundary").textContent = "none";
+  document.getElementById("dotBoundary").classList.remove("on");
+  updateGeotiffButton();
+});
+
+function setBoundary(geojson, filename){
+  S.boundary = geojson.type === "FeatureCollection" ? geojson : { type:"FeatureCollection", features:[geojson] };
+  S.boundaryFilename = filename;
+  if (boundaryLayer) map.removeLayer(boundaryLayer);
+  boundaryLayer = L.geoJSON(S.boundary, {
+    style:{ color:"#d3a23a", weight:2, fillColor:"#d3a23a", fillOpacity:0.06 }
+  }).addTo(map);
+  map.fitBounds(boundaryLayer.getBounds(), { padding:[30,30] });
+  let areaAc = 0;
+  try{
+    for (const feat of S.boundary.features){
+      areaAc += featureAreaM2(feat) / 4046.8564224; // m^2 -> acres
+    }
+  } catch(e){}
+  document.getElementById("stBoundary").textContent = filename;
+  document.getElementById("stBoundaryArea").textContent = areaAc ? fmtNum(areaAc,1) + " ac" : "—";
+  document.getElementById("sbBoundary").textContent = filename;
+  document.getElementById("dotBoundary").classList.add("on");
+  updateGeotiffButton();
+  toast("Boundary loaded: " + filename);
+}
+function updateGeotiffButton(){
+  const btn = document.getElementById("btnExportGeotiff");
+  btn.disabled = !S.boundary;
+  document.getElementById("geotiffHint").textContent = S.boundary
+    ? "Interpolates the selected attributes onto a grid and masks cells outside the boundary as nodata (-9999)."
+    : "Import a boundary first — the raster grid and nodata mask are clipped to it.";
+}
+document.getElementById("gtMethod").addEventListener("change", () => {
+  const m = document.getElementById("gtMethod").value;
+  document.getElementById("gtPowerField").style.display = m === "kriging" ? "none" : "";
+  document.getElementById("gtRangeField").style.display = m === "kriging" ? "" : "none";
+});
+
+/* ---------------------------------------------------------------
+   Export: CSV / GeoJSON / Shapefile / AgLeader Text
+   --------------------------------------------------------------- */
+function downloadBlob(bytesOrString, filename, mime){
+  const blob = new Blob([bytesOrString], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+function exportColumns(){
+  const cols = [...S.columns];
+  const sample = S.filteredRows[0];
+  if (S.workingYieldCol === "yield_balanced" && !cols.includes("yield_balanced")){
+    cols.push("yield_balanced");
+    for (const fc of ["balance_factor","moisturebal_factor","postcal_factor"]){
+      if (sample && sample[fc] !== undefined) cols.push(fc);
+    }
+  }
+  for (const c of ["yield_dry_clean","yield_wet_clean","moisture_clean"]){
+    if (sample && sample[c] !== undefined && !cols.includes(c)) cols.push(c);
+  }
+  return cols;
+}
+
+/* ---------------------------------------------------------------
+   Export column-set mode: "full" (original + cleaned columns, as
+   before) vs "streamlined" (only the cleaned wet/dry/moisture
+   values, relabelled back to the ORIGINAL column names so the
+   exported file's structure closely mirrors the source file's).
+   --------------------------------------------------------------- */
+function getExportMode(){
+  const el = document.querySelector('input[name="exportColMode"]:checked');
+  return el ? el.value : "full";
+}
+function streamlinedColumns(){
+  // [outputName, sourceKey] pairs — outputName is the ORIGINAL mapped
+  // column name so downstream tools see familiar headers; sourceKey is
+  // where the cleaned value actually lives after the pipeline runs.
+  const sample = S.filteredRows[0];
+  const pairs = [];
+  if (S.mapping.yieldDry && sample && sample.yield_dry_clean !== undefined) pairs.push([S.mapping.yieldDry, "yield_dry_clean"]);
+  if (S.mapping.yieldWet && sample && sample.yield_wet_clean !== undefined) pairs.push([S.mapping.yieldWet, "yield_wet_clean"]);
+  if (S.mapping.moisture && sample && sample.moisture_clean !== undefined) pairs.push([S.mapping.moisture, "moisture_clean"]);
+  return pairs;
+}
+// Builds { cols, rows } for the point-data exports below, honoring the
+// Full/Streamlined column-set mode. `rows` are plain objects keyed by
+// the OUTPUT column names in `cols`; Longitude/Latitude (and __poly__,
+// for polygon inputs) are always carried along on each row for the
+// geometry-building code even when they're not part of `cols` itself
+// (streamlined mode doesn't list them as attribute columns).
+function buildExportData(){
+  const { lon, lat } = S.mapping;
+  const mode = getExportMode();
+  let outNames, srcKeys;
+  if (mode === "streamlined"){
+    const pairs = streamlinedColumns();
+    outNames = pairs.map(p => p[0]);
+    srcKeys = pairs.map(p => p[1]);
+  } else {
+    outNames = exportColumns();
+    srcKeys = outNames;
+  }
+  const rows = S.filteredRows.map(r => {
+    const o = {};
+    for (let i = 0; i < outNames.length; i++) o[outNames[i]] = r[srcKeys[i]];
+    if (lon) o[lon] = r[lon];
+    if (lat) o[lat] = r[lat];
+    if (r.__poly__) o.__poly__ = r.__poly__;
+    return o;
+  });
+  return { cols: outNames, rows, mode };
+}
+function csvEscape(v){
+  if (v === undefined || v === null) return "";
+  if (typeof v === "number" && Number.isNaN(v)) return "";
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+
+document.getElementById("btnExportCsv").addEventListener("click", () => {
+  if (!requireData()) return;
+  const { cols, rows } = buildExportData();
+  if (!cols.length){ toast("Streamlined mode has no cleaned wet/dry/moisture columns to export yet — run Filters first, or switch to Full.", true); return; }
+  const lines = [cols.join(",")];
+  for (const r of rows) lines.push(cols.map(c=>csvEscape(r[c])).join(","));
+  downloadBlob(lines.join("\n"), baseName()+"_export.csv", "text/csv");
+  toast("Exported CSV — " + rows.length.toLocaleString() + " records");
+});
+
+document.getElementById("btnExportGeojson").addEventListener("click", () => {
+  if (!requireData()) return;
+  const { lon, lat } = S.mapping;
+  const { cols, rows } = buildExportData();
+  const propCols = cols.filter(c=>c!==lon && c!==lat);
+  const isPolygon = rows.length && !!rows[0].__poly__;
+  const feats = rows.map(r => {
+    const geometry = (isPolygon && r.__poly__)
+      ? { type:"Polygon", coordinates:r.__poly__ }
+      : { type:"Point", coordinates:[parseFloat(r[lon]), parseFloat(r[lat])] };
+    return {
+      type:"Feature", geometry,
+      properties: Object.fromEntries(propCols.map(c => [c, normalizeJsonVal(r[c])])),
+    };
+  });
+  const fc = { type:"FeatureCollection", features:feats };
+  downloadBlob(JSON.stringify(fc), baseName()+"_export.geojson", "application/geo+json");
+  toast("Exported GeoJSON — " + feats.length.toLocaleString() + (isPolygon ? " polygons" : " points"));
+});
+function normalizeJsonVal(v){
+  if (v === undefined) return null;
+  if (typeof v === "number" && Number.isNaN(v)) return null;
+  return v;
+}
+
+document.getElementById("btnExportShapefile").addEventListener("click", async () => {
+  if (!requireData()) return;
+  const { lon, lat } = S.mapping;
+  const { cols, rows } = buildExportData();
+  const propCols = cols.filter(c=>c!==lon && c!==lat);
+  const isPolygon = rows.length && !!rows[0].__poly__;
+  const { bytes: dbf, nameMap } = packDBF(rows, propCols);
+  const { shpBytes, shxBytes } = isPolygon
+    ? packShpShxPolygon(rows, r => r.__poly__)
+    : packShpShx(rows, lon, lat);
+  const zip = new JSZip();
+  const base = baseName()+"_export";
+  zip.file(base+".shp", shpBytes);
+  zip.file(base+".shx", shxBytes);
+  zip.file(base+".dbf", dbf);
+  zip.file(base+".prj", PRJ_WGS84);
+  if (Object.keys(nameMap).length){
+    const lines = ["dbf_name,original_name", ...Object.entries(nameMap).map(([k,v])=>`${k},${csvEscape(v)}`)];
+    zip.file("fieldnames.csv", lines.join("\n"));
+  }
+  const blob = await zip.generateAsync({ type:"blob" });
+  downloadBlob(blob, base+".zip", "application/zip");
+  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points"));
+});
+
+document.getElementById("btnExportAgLeader").addEventListener("click", () => {
+  if (!requireData()) return;
+  const { lon, lat, timestamp, machine, swath, velocity } = S.mapping;
+  const yieldCol = S.workingYieldCol || getPrimaryYieldCol();
+  if (!yieldCol){ toast("No yield column mapped.", true); return; }
+  // Prefer an actual mapped Wet/Unprocessed Yield value for the AgLeader
+  // schema's Grain_Flow_lbs_sec field — it's already the raw flow signal
+  // this format expects — over back-calculating one from a per-acre rate.
+  const sample0 = S.filteredRows[0];
+  const wetCol = S.mapping.yieldWet ? (sample0 && sample0.yield_wet_clean !== undefined ? "yield_wet_clean" : S.mapping.yieldWet) : null;
+  const lbsPerBu = 56.0;
+  const rows = [...S.filteredRows];
+  const withTs = rows.map(r => ({ r, ts: timestamp ? parseTimestampToUnix(r[timestamp]) : 0 }));
+  withTs.sort((a,b) => (a.ts||0) - (b.ts||0));
+  const lines = [];
+  for (const { r, ts } of withTs){
+    const laV = parseFloat(r[lat]), loV = parseFloat(r[lon]);
+    const yld = parseFloat(r[yieldCol]);
+    const spdMph = velocity ? parseFloat(r[velocity]) : NaN;
+    const spdFtS = isFinite(spdMph) ? spdMph * 1.46667 : NaN;
+    const swathFt = swath ? unitToFeet(parseFloat(r[swath]), S.units.swath) : NaN;
+    const wetVal = wetCol ? parseFloat(r[wetCol]) : NaN;
+    const grainFlow = isFinite(wetVal) ? wetVal
+      : ((isFinite(yld) && isFinite(spdFtS) && isFinite(swathFt)) ? (yld * swathFt * spdFtS * lbsPerBu) / 43560 : 0);
+    const gpsTime = isFinite(ts) ? Math.round(ts - GPS_EPOCH_OFFSET) : 0;
+    const distance = isFinite(spdFtS) ? Math.round(spdFtS*10) : 0;
+    const swathIn = isFinite(swathFt) ? Math.round(swathFt*12) : 0;
+    const cols = [
+      isFinite(loV)?loV.toFixed(7):"0", isFinite(laV)?laV.toFixed(7):"0",
+      isFinite(grainFlow)?grainFlow.toFixed(2):"0", gpsTime, 1, distance, swathIn,
+      "0.0", 1, 1, machine?String(r[machine]):"MONITOR1", "FIELD", "LOAD1",
+      "Corn", 7, "1.0", "0.0",
+    ];
+    lines.push(cols.join(","));
+  }
+  downloadBlob(lines.join("\n"), baseName()+"_agleader.txt", "text/plain");
+  toast("Exported AgLeader Advanced Text — " + lines.length.toLocaleString() + " records");
+});
+function unitToFeet(v, unit){
+  if (!isFinite(v)) return NaN;
+  if (unit === "ft") return v;
+  if (unit === "in") return v/12;
+  if (unit === "m") return v*3.28084;
+  return v;
+}
+
+function requireData(){
+  if (!S.filteredRows.length){ toast("No data to export — import and apply filters first.", true); return false; }
+  if (!S.mapping.lon || !S.mapping.lat){ toast("Longitude/Latitude are not mapped.", true); return false; }
+  return true;
+}
+function baseName(){
+  const customEl = document.getElementById("outputNameInput");
+  const custom = customEl ? customEl.value.trim() : "";
+  const src = custom || S.sourceFilename || "yield";
+  return src.replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"_");
+}
+
+/* ---------------------------------------------------------------
+   GeoTIFF export (multi-band, clipped to boundary)
+   --------------------------------------------------------------- */
+function populateGeotiffAttrList(){
+  const wrap = document.getElementById("geotiffAttrList");
+  wrap.innerHTML = "";
+  const candidates = [];
+  const primary = getPrimaryYieldCol();
+  if (primary) candidates.push(primary);
+  candidates.push("yield_balanced", "yield_dry_clean", "yield_wet_clean", "moisture_clean");
+  if (S.mapping.yieldDry && !candidates.includes(S.mapping.yieldDry)) candidates.push(S.mapping.yieldDry);
+  if (S.mapping.yieldWet && !candidates.includes(S.mapping.yieldWet)) candidates.push(S.mapping.yieldWet);
+  for (const c of S.numericCols) if (!candidates.includes(c)) candidates.push(c);
+  for (const c of candidates){
+    const id = "gtattr_"+c.replace(/[^a-z0-9_]/gi,"_");
+    const item = document.createElement("label");
+    item.className = "chk-item";
+    item.innerHTML = `<input type="checkbox" id="${id}" value="${c}"> ${c}`;
+    wrap.appendChild(item);
+  }
+  const first = wrap.querySelector("input");
+  if (first) first.checked = true;
+}
+
+document.getElementById("btnExportGeotiff").addEventListener("click", () => {
+  if (!S.boundary){ toast("Import a boundary first.", true); return; }
+  if (!requireData()) return;
+  const attrs = [...document.querySelectorAll("#geotiffAttrList input:checked")].map(i=>i.value);
+  if (!attrs.length){ toast("Select at least one attribute.", true); return; }
+  const cellSizeM = parseFloat(document.getElementById("gtCellSize").value) || 10;
+  const power = parseFloat(document.getElementById("gtPower").value) || 2;
+  const method = document.getElementById("gtMethod").value || "idw";
+  const rangeM = parseFloat(document.getElementById("gtRange").value);
+
+  const bbox = bboxOfFeatureCollection(S.boundary); // [minX,minY,maxX,maxY] in degrees
+  const [minX, minY, maxX, maxY] = bbox;
+  const midLat = (minY+maxY)/2;
+  const mPerDegLat = 111320;
+  const mPerDegLon = 111320 * Math.cos(midLat * Math.PI/180);
+  const cellDegX = cellSizeM / mPerDegLon;
+  const cellDegY = cellSizeM / mPerDegLat;
+  let cols = Math.max(2, Math.round((maxX-minX)/cellDegX));
+  let rows = Math.max(2, Math.round((maxY-minY)/cellDegY));
+  const MAXDIM = 800;
+  if (cols > MAXDIM || rows > MAXDIM){
+    const scale = Math.max(cols,rows)/MAXDIM;
+    cols = Math.round(cols/scale); rows = Math.round(rows/scale);
+    toast(`Grid capped to ${cols}x${rows} cells to keep the browser responsive.`);
+  }
+  const { lon, lat } = S.mapping;
+  // Degrees-per-metre at this field's latitude, for converting a
+  // user-entered kriging range (metres) into the same lon/lat degree
+  // space the interpolation grid runs in.
+  const degPerMeter = (cellDegX + cellDegY) / (2 * cellSizeM);
+  const rangeDeg = (isFinite(rangeM) && rangeM > 0) ? rangeM * degPerMeter : null;
+  if (method === "kriging" && cols*rows > 200000){
+    toast("Ordinary Kriging on a large grid can take a while — consider a larger cell size for faster exports.");
+  }
+
+  // Precompute a per-cell inside/outside mask once (shared across bands)
+  const mask = new Uint8Array(cols*rows);
+  const cellW = (maxX-minX)/cols, cellH = (maxY-minY)/rows;
+  const boundaryFeats = S.boundary.features;
+  for (let r = 0; r < rows; r++){
+    const py = maxY - (r+0.5)*cellH;
+    for (let c = 0; c < cols; c++){
+      const px = minX + (c+0.5)*cellW;
+      let inside = false;
+      for (const feat of boundaryFeats){
+        if (pointInPolygonFeature(px, py, feat)){ inside = true; break; }
+      }
+      mask[r*cols+c] = inside ? 1 : 0;
+    }
+  }
+
+  const bands = [];
+  for (const attr of attrs){
+    const pts = [];
+    for (const rrow of S.filteredRows){
+      const x = parseFloat(rrow[lon]), y = parseFloat(rrow[lat]), v = parseFloat(rrow[attr]);
+      if (isFinite(x) && isFinite(y) && isFinite(v)) pts.push({x,y,v});
+    }
+    if (!pts.length){ toast(`No valid values for "${attr}" — skipped.`, true); continue; }
+    const grid = method === "kriging"
+      ? krigingGrid(pts, { minX, minY, maxX, maxY, cols, rows }, { k:10, range:rangeDeg })
+      : idwGrid(pts, { minX, minY, maxX, maxY, cols, rows }, { power, k:12 });
+    const band = new Float32Array(cols*rows);
+    for (let i = 0; i < band.length; i++) band[i] = mask[i] ? grid[i] : -9999;
+    bands.push(band);
+  }
+  if (!bands.length) return;
+
+  const bytes = writeGeoTIFF({
+    width:cols, height:rows, bands,
+    originLon:minX, originLat:maxY, pixelW:cellW, pixelH:cellH, nodata:-9999,
+  });
+  const methodTag = method === "kriging" ? "ok" : "idw";
+  const fname = baseName()+"_"+methodTag+"_"+attrs.length+"band_"+cols+"x"+rows+".tif";
+  downloadBlob(bytes, fname, "image/tiff");
+  S.geotiffExports.push({ ts:new Date().toISOString(), attrs, method, cellSizeM, cols, rows, filename:fname });
+  toast(`Exported GeoTIFF (${cols}×${rows}, ${bands.length} band${bands.length>1?"s":""}, ${method === "kriging" ? "ordinary kriging" : "IDW"})`);
+  renderSummaryPreview();
+});
+
+/* ---------------------------------------------------------------
+   Session summary (Markdown + HTML)
+   --------------------------------------------------------------- */
+function buildSummary(){
+  const now = new Date();
+  const primaryCol = getPrimaryYieldCol();
+  const yieldColForStats = S.workingYieldCol || primaryCol;
+  const statsBefore = primaryCol ? basicStats(S.rawRows, primaryCol) : null;
+  const statsAfter = yieldColForStats ? basicStats(S.filteredRows, yieldColForStats) : null;
+
+  const enabledFilters = FILTER_DEFS.filter(([code]) => S.filters[code].enabled).map(([code,name]) => {
+    const f = S.filters[code];
+    let detail = "";
+    if (code === "POS") detail = f.bounds ? `box ${fmtNum(f.bounds.latMin,5)},${fmtNum(f.bounds.lonMin,5)} → ${fmtNum(f.bounds.latMax,5)},${fmtNum(f.bounds.lonMax,5)}` : "no box drawn";
+    else if (code === "MAN") detail = `${S.manPolygons.length} polygon(s)`;
+    else detail = `${f.val ?? "—"}`;
+    return { code, name, detail };
+  });
+
+  const dateFactors = S.balanceFactors.date ? Object.entries(S.balanceFactors.date) : [];
+  const machineFactors = S.balanceFactors.machine ? Object.entries(S.balanceFactors.machine) : [];
+  const moistureFactors = S.balanceFactors.moisture ? Object.entries(S.balanceFactors.moisture) : [];
+
+  return {
+    now, statsBefore, statsAfter, enabledFilters, dateFactors, machineFactors, moistureFactors,
+    trace: S.trace, yieldColForStats, postCal: S.postCalResult,
+  };
+}
+
+function summaryMarkdown(){
+  const d = buildSummary();
+  const lines = [];
+  lines.push(`# Yield Editor Pro — Session Summary`);
+  lines.push(``);
+  lines.push(`Generated: ${d.now.toLocaleString()}`);
+  lines.push(``);
+  lines.push(`## Source`);
+  lines.push(`- File: **${S.sourceFilename || "—"}**`);
+  lines.push(`- Format: ${S.sourceFormat || "—"}`);
+  lines.push(`- Records imported: ${S.rawRows.length.toLocaleString()}`);
+  lines.push(`- Records after filters/balance: ${S.filteredRows.length.toLocaleString()}`);
+  lines.push(``);
+  lines.push(`## Column mapping`);
+  for (const [role,label] of ROLE_LIST) lines.push(`- ${label}: \`${S.mapping[role] || "—"}\``);
+  lines.push(`- Primary yield for filtering/outlier detection: **${S.mapping.primaryYield === "wet" ? "Wet/Unprocessed" : "Dry/Processed"}**`);
+  lines.push(``);
+  lines.push(`## Filters applied`);
+  if (!d.enabledFilters.length) lines.push(`- none`);
+  for (const f of d.enabledFilters) lines.push(`- **${f.code}** — ${f.name}: ${f.detail}`);
+  lines.push(``);
+  lines.push(`## Pipeline record counts`);
+  for (const t of d.trace) lines.push(`- ${t.step}: ${t.count.toLocaleString()}`);
+  lines.push(``);
+  lines.push(`## Balancing`);
+  lines.push(`- Date balancing: ${S.balance.dateEnabled ? `enabled, base = ${S.balance.dateBase}` : "disabled"}`);
+  if (d.dateFactors.length){
+    for (const [g,f] of d.dateFactors) lines.push(`  - ${g}: ×${f.toFixed(4)}`);
+  }
+  lines.push(`- Machine balancing: ${S.balance.machineEnabled ? `enabled, base = ${S.balance.machineBase}` : "disabled"}`);
+  if (d.machineFactors.length){
+    for (const [g,f] of d.machineFactors) lines.push(`  - ${g}: ×${f.toFixed(4)}`);
+  }
+  lines.push(`- Moisture balancing: ${S.balance.moistureEnabled ? `enabled, base = ${S.balance.moistureBase}` : "disabled"}`);
+  if (d.moistureFactors.length){
+    for (const [g,f] of d.moistureFactors) lines.push(`  - ${g}: ×${f.toFixed(4)}`);
+  }
+  lines.push(``);
+  lines.push(`## Post-harvest calibration`);
+  if (!S.postCal.enabled) lines.push(`- disabled`);
+  else if (d.postCal && d.postCal.factor !== null && d.postCal.factor !== undefined){
+    lines.push(`- Applied factor: ×${d.postCal.factor.toFixed(4)}`);
+    lines.push(`- Current wet mean at time of calibration: ${fmtNum(d.postCal.currentMeanWet,2)}`);
+    if (d.postCal.currentTotalWet !== null) lines.push(`- Current total wet: ${fmtNum(d.postCal.currentTotalWet,1)} (${fmtNum(d.postCal.acres,1)} ac, ${d.postCal.acresSource === "boundary" ? "from boundary" : "estimated from swath × speed"})`);
+    if (d.postCal.avgMoisture !== null) lines.push(`- Average moisture used: ${fmtNum(d.postCal.avgMoisture,1)}%`);
+    if (S.postCal.totalWet !== null) lines.push(`- Target Total Wet entered: ${S.postCal.totalWet}`);
+    if (S.postCal.wetAvg !== null) lines.push(`- Target Wet Yield Avg/ac entered: ${S.postCal.wetAvg}`);
+    if (S.postCal.totalDry !== null) lines.push(`- Target Total Dry entered: ${S.postCal.totalDry}`);
+    if (S.postCal.dryAvg !== null) lines.push(`- Target Dry Yield Avg/ac entered: ${S.postCal.dryAvg}`);
+  } else lines.push(`- enabled, but no target value entered`);
+  lines.push(``);
+  lines.push(`## Yield statistics`);
+  lines.push(`| | Before filters | After filters/balance |`);
+  lines.push(`|---|---|---|`);
+  lines.push(`| n | ${d.statsBefore?d.statsBefore.n.toLocaleString():"—"} | ${d.statsAfter?d.statsAfter.n.toLocaleString():"—"} |`);
+  lines.push(`| mean | ${d.statsBefore?fmtNum(d.statsBefore.mean,2):"—"} | ${d.statsAfter?fmtNum(d.statsAfter.mean,2):"—"} |`);
+  lines.push(`| std dev | ${d.statsBefore?fmtNum(d.statsBefore.std,2):"—"} | ${d.statsAfter?fmtNum(d.statsAfter.std,2):"—"} |`);
+  lines.push(`| min | ${d.statsBefore?fmtNum(d.statsBefore.min,2):"—"} | ${d.statsAfter?fmtNum(d.statsAfter.min,2):"—"} |`);
+  lines.push(`| max | ${d.statsBefore?fmtNum(d.statsBefore.max,2):"—"} | ${d.statsAfter?fmtNum(d.statsAfter.max,2):"—"} |`);
+  lines.push(``);
+  lines.push(`## Boundary`);
+  lines.push(`- ${S.boundary ? S.boundaryFilename : "none imported"}`);
+  lines.push(``);
+  lines.push(`## GeoTIFF exports this session`);
+  if (!S.geotiffExports.length) lines.push(`- none`);
+  for (const g of S.geotiffExports){
+    lines.push(`- \`${g.filename}\` — bands: ${g.attrs.join(", ")}; grid ${g.cols}×${g.rows} @ ${g.cellSizeM} m/cell; method: ${g.method === "kriging" ? "Ordinary Kriging" : "IDW"}; ${new Date(g.ts).toLocaleTimeString()}`);
+  }
+  lines.push(``);
+  return lines.join("\n");
+}
+
+function summaryHtmlDoc(){
+  const md = summaryMarkdown();
+  const d = buildSummary();
+  const escapeHtml = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  const filterRows = d.enabledFilters.length
+    ? d.enabledFilters.map(f=>`<tr><td><code>${f.code}</code></td><td>${escapeHtml(f.name)}</td><td>${escapeHtml(f.detail)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="muted">none</td></tr>`;
+  const traceRows = d.trace.map(t=>`<tr><td>${escapeHtml(t.step)}</td><td>${escapeHtml(t.label)}</td><td>${t.count.toLocaleString()}</td></tr>`).join("");
+  const geotiffRows = S.geotiffExports.length
+    ? S.geotiffExports.map(g=>`<tr><td><code>${escapeHtml(g.filename)}</code></td><td>${escapeHtml(g.attrs.join(", "))}</td><td>${g.cols}×${g.rows} @ ${g.cellSizeM} m</td><td>${g.method === "kriging" ? "Ordinary Kriging" : "IDW"}</td><td>${new Date(g.ts).toLocaleTimeString()}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="muted">none</td></tr>`;
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Yield Editor Pro — Session Summary</title>
+<style>
+  :root{--bg:#12150f;--panel:#191d15;--line:#2c331f;--text:#e9e7da;--muted:#93987f;--accent:#93b23f;--gold:#d3a23a;}
+  *{box-sizing:border-box;} body{background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+    max-width:880px;margin:40px auto;padding:0 20px;line-height:1.55;}
+  h1{font-size:22px;border-bottom:2px solid var(--accent);padding-bottom:10px;}
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--gold);margin-top:34px;}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;}
+  th{background:var(--panel);color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;}
+  code{background:var(--panel);padding:1px 5px;border-radius:3px;font-size:12px;}
+  .muted{color:var(--muted);}
+  .meta{color:var(--muted);font-size:12.5px;}
+  ul{padding-left:20px;}
+</style></head><body>
+<h1>Yield Editor Pro — Session Summary</h1>
+<p class="meta">Generated ${d.now.toLocaleString()}</p>
+
+<h2>Source</h2>
+<table><tr><th>File</th><td>${escapeHtml(S.sourceFilename||"—")}</td></tr>
+<tr><th>Format</th><td>${escapeHtml(S.sourceFormat||"—")}</td></tr>
+<tr><th>Records imported</th><td>${S.rawRows.length.toLocaleString()}</td></tr>
+<tr><th>Records after filters/balance</th><td>${S.filteredRows.length.toLocaleString()}</td></tr></table>
+
+<h2>Column mapping</h2>
+<table><tr><th>Role</th><th>Column</th></tr>
+${ROLE_LIST.map(([role,label])=>`<tr><td>${label}</td><td><code>${escapeHtml(S.mapping[role]||"—")}</code></td></tr>`).join("")}
+<tr><th>Primary yield for filtering/outlier detection</th><td>${S.mapping.primaryYield === "wet" ? "Wet/Unprocessed" : "Dry/Processed"}</td></tr>
+</table>
+
+<h2>Filters applied</h2>
+<table><tr><th>Code</th><th>Description</th><th>Setting</th></tr>${filterRows}</table>
+
+<h2>Pipeline record counts</h2>
+<table><tr><th>Step</th><th>Description</th><th>Records</th></tr>${traceRows}</table>
+
+<h2>Balancing</h2>
+<p>Date balancing: ${S.balance.dateEnabled ? `enabled, base = <code>${escapeHtml(S.balance.dateBase)}</code>` : "disabled"}</p>
+${d.dateFactors.length ? `<table><tr><th>Group</th><th>Factor</th></tr>${d.dateFactors.map(([g,f])=>`<tr><td>${escapeHtml(g)}</td><td>×${f.toFixed(4)}</td></tr>`).join("")}</table>` : ""}
+<p>Machine balancing: ${S.balance.machineEnabled ? `enabled, base = <code>${escapeHtml(S.balance.machineBase)}</code>` : "disabled"}</p>
+${d.machineFactors.length ? `<table><tr><th>Group</th><th>Factor</th></tr>${d.machineFactors.map(([g,f])=>`<tr><td>${escapeHtml(g)}</td><td>×${f.toFixed(4)}</td></tr>`).join("")}</table>` : ""}
+<p>Moisture balancing: ${S.balance.moistureEnabled ? `enabled, base = <code>${escapeHtml(S.balance.moistureBase)}</code>` : "disabled"}</p>
+${d.moistureFactors.length ? `<table><tr><th>Group</th><th>Factor</th></tr>${d.moistureFactors.map(([g,f])=>`<tr><td>${escapeHtml(g)}</td><td>×${f.toFixed(4)}</td></tr>`).join("")}</table>` : ""}
+
+<h2>Post-harvest calibration</h2>
+${!S.postCal.enabled ? `<p>disabled</p>` : (d.postCal && d.postCal.factor !== null && d.postCal.factor !== undefined ? `
+<table>
+<tr><th>Applied factor</th><td>×${d.postCal.factor.toFixed(4)}</td></tr>
+<tr><th>Current wet mean at calibration</th><td>${fmtNum(d.postCal.currentMeanWet,2)}</td></tr>
+${d.postCal.currentTotalWet !== null ? `<tr><th>Current total wet</th><td>${fmtNum(d.postCal.currentTotalWet,1)} (${fmtNum(d.postCal.acres,1)} ac, ${d.postCal.acresSource === "boundary" ? "from boundary" : "estimated from swath × speed"})</td></tr>` : ""}
+${d.postCal.avgMoisture !== null ? `<tr><th>Average moisture used</th><td>${fmtNum(d.postCal.avgMoisture,1)}%</td></tr>` : ""}
+${S.postCal.totalWet !== null ? `<tr><th>Target Total Wet entered</th><td>${S.postCal.totalWet}</td></tr>` : ""}
+${S.postCal.wetAvg !== null ? `<tr><th>Target Wet Yield Avg/ac entered</th><td>${S.postCal.wetAvg}</td></tr>` : ""}
+${S.postCal.totalDry !== null ? `<tr><th>Target Total Dry entered</th><td>${S.postCal.totalDry}</td></tr>` : ""}
+${S.postCal.dryAvg !== null ? `<tr><th>Target Dry Yield Avg/ac entered</th><td>${S.postCal.dryAvg}</td></tr>` : ""}
+</table>` : `<p>enabled, but no target value entered</p>`)}
+
+<h2>Yield statistics</h2>
+<table><tr><th></th><th>Before filters</th><th>After filters/balance</th></tr>
+<tr><td>n</td><td>${d.statsBefore?d.statsBefore.n.toLocaleString():"—"}</td><td>${d.statsAfter?d.statsAfter.n.toLocaleString():"—"}</td></tr>
+<tr><td>mean</td><td>${d.statsBefore?fmtNum(d.statsBefore.mean,2):"—"}</td><td>${d.statsAfter?fmtNum(d.statsAfter.mean,2):"—"}</td></tr>
+<tr><td>std dev</td><td>${d.statsBefore?fmtNum(d.statsBefore.std,2):"—"}</td><td>${d.statsAfter?fmtNum(d.statsAfter.std,2):"—"}</td></tr>
+<tr><td>min</td><td>${d.statsBefore?fmtNum(d.statsBefore.min,2):"—"}</td><td>${d.statsAfter?fmtNum(d.statsAfter.min,2):"—"}</td></tr>
+<tr><td>max</td><td>${d.statsBefore?fmtNum(d.statsBefore.max,2):"—"}</td><td>${d.statsAfter?fmtNum(d.statsAfter.max,2):"—"}</td></tr>
+</table>
+
+<h2>Boundary</h2>
+<p>${escapeHtml(S.boundary ? S.boundaryFilename : "none imported")}</p>
+
+<h2>GeoTIFF exports this session</h2>
+<table><tr><th>File</th><th>Bands</th><th>Grid</th><th>Method</th><th>Time</th></tr>${geotiffRows}</table>
+
+</body></html>`;
+}
+
+function renderSummaryPreview(){
+  document.getElementById("summaryPreview").value = summaryMarkdown();
+}
+document.getElementById("btnSummaryMd").addEventListener("click", () => {
+  downloadBlob(summaryMarkdown(), baseName()+"_session_summary.md", "text/markdown");
+});
+document.getElementById("btnSummaryHtml").addEventListener("click", () => {
+  downloadBlob(summaryHtmlDoc(), baseName()+"_session_summary.html", "text/html");
+});
+
+/* ---------------------------------------------------------------
+   Session save/load (settings only — no source data, matching
+   the desktop tool's .yesession convention)
+   --------------------------------------------------------------- */
+document.getElementById("btnSaveSession").addEventListener("click", () => {
+  readFiltersFromUI(); readBalanceFromUI(); readPostCalFromUI();
+  syncFilterOrderFromDOM();
+  const session = {
+    kind:"yield-editor-pro-web-session", version:1,
+    mapping:S.mapping, units:S.units, filters:S.filters, balance:S.balance, postCal:S.postCal,
+    filterOrder:S.filterOrder, customFilterOrder:S.customFilterOrder,
+    manPolygons:S.manPolygons, sourceFilename:S.sourceFilename,
+  };
+  downloadBlob(JSON.stringify(session, null, 2), baseName()+".yesession.json", "application/json");
+  toast("Session settings saved");
+});
+document.getElementById("loadSessionInput").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try{
+    const session = JSON.parse(await f.text());
+    if (session.mapping) S.mapping = session.mapping;
+    if (session.units) S.units = session.units;
+    if (session.filters) S.filters = session.filters;
+    if (session.balance) S.balance = session.balance;
+    if (session.postCal) S.postCal = session.postCal;
+    if (session.filterOrder && session.filterOrder.length) S.filterOrder = session.filterOrder;
+    if (typeof session.customFilterOrder === "boolean") S.customFilterOrder = session.customFilterOrder;
+    if (session.manPolygons) S.manPolygons = session.manPolygons;
+    buildFilterList();
+    applyFiltersToUI();
+    if (S.columns.length) buildMappingUI();
+    toast("Session settings loaded — re-import your source file if you haven't already.");
+    if (S.rawRows.length) recompute();
+  } catch(err){ toast("Could not load session: " + err.message, true); }
+  e.target.value = "";
+});
+function applyFiltersToUI(){
+  for (const [code] of FILTER_DEFS){
+    const chk = document.getElementById("filterOn_"+code);
+    if (chk) chk.checked = !!S.filters[code].enabled;
+    const inp = document.getElementById("filterVal_"+code);
+    if (inp && S.filters[code].val !== null && S.filters[code].val !== undefined) inp.value = S.filters[code].val;
+  }
+  document.getElementById("customFilterOrderEnabled").checked = !!S.customFilterOrder;
+  document.getElementById("balDateEnabled").checked = !!S.balance.dateEnabled;
+  document.getElementById("balMachineEnabled").checked = !!S.balance.machineEnabled;
+  document.getElementById("balMoistureEnabled").checked = !!S.balance.moistureEnabled;
+  document.getElementById("pcEnabled").checked = !!S.postCal.enabled;
+  const pc = { pcTotalWet:"totalWet", pcWetAvg:"wetAvg", pcTotalDry:"totalDry", pcDryAvg:"dryAvg" };
+  for (const [id, key] of Object.entries(pc)){
+    const el = document.getElementById(id);
+    el.value = (S.postCal[key] !== null && S.postCal[key] !== undefined) ? S.postCal[key] : "";
+  }
+}
+
+/* ---------------------------------------------------------------
+   Boot
+   --------------------------------------------------------------- */
+initMap();
+
+</script>
+
+
+</body>
+</html>

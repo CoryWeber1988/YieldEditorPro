@@ -1,0 +1,17 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+
+# Local test data / session files (avoid accidentally committing real farm data)
+/test-data/
+/sample-data/
+*.session.json
+
+# Archives that sometimes get dropped in while testing exports
+*.zip
+!*/**/keep.zip
