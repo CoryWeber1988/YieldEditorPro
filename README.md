@@ -84,7 +84,7 @@ Contributions, bug reports, and feature suggestions are welcome — see [CONTRIB
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE). In short: anyone can use, modify, and redistribute it — including commercially — but any distributed modified version, **and any modified version made available to users over a network** (e.g. a hosted/SaaS fork), must also make its complete source code available under AGPLv3. That closes off the "quietly turn it into a closed, hosted product" path while still allowing commercial use. See the [Attribution](#attribution--usda-yield-editor) section above regarding the underlying USDA methodology this tool implements, which is separate from this project's own AGPLv3 license.
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE). In short: anyone can use, modify, and redistribute it — including commercially — but any distributed modified version, **and any modified version made available to users over a network** (e.g. a hosted/SaaS fork), must also make its complete source code available under AGPLv3. This is meant to close off the "quietly turn it into a closed, hosted product" path while still allowing commercial use. See the [Attribution](#attribution--usda-yield-editor) section above regarding the underlying USDA methodology this tool implements, which is separate from this project's own AGPLv3 license.
 
 ## Acknowledgments
 
