@@ -2,8 +2,9 @@
 
 A free, browser-based tool for cleaning combine yield-monitor data — importing raw yield files, correcting machine/date/moisture calibration drift, filtering out bad points, truing the result up to a known scale-ticket total, and exporting cleaned data or an interpolated yield map. It's a single self-contained HTML file: no install, no account, no server, and no data ever leaves your browser.
 
-**[Launch the tool »](https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO-NAME/)**
-*(update this link once GitHub Pages is enabled — see [Hosting on GitHub Pages](#hosting-on-github-pages) below)*
+**[Launch the tool »](https://coryweber1988.github.io/YieldEditorPro/
+
+
 
 ---
 
