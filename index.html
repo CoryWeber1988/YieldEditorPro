@@ -36,7 +36,7 @@
   --radius:3px; --mono:ui-monospace,"SF Mono",Consolas,"Roboto Mono",monospace;
   --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
-:root[data-theme="light"]{
+body[data-theme="light"]{
   --bg:#f3f2ea; --panel:#fbfaf4; --panel2:#efede0; --line:#d8d5c2;
   --text:#22271a; --muted:#5c614c; --muted2:#8b8f76;
   --accent:#5f7a24; --accent2:#3e5518; --gold:#966a19; --rust:#a04a29;
@@ -235,11 +235,67 @@ textarea.summaryPreview{
   width:100%; height:160px; background:var(--panel2); border:1px solid var(--line); color:var(--text);
   font-family:var(--mono); font-size:11px; padding:8px; border-radius:var(--radius); resize:vertical;
 }
+
+/* ---------- collapsible sidebar ---------- */
+#sidebarToggle{ width:34px; height:34px; padding:0; display:flex; align-items:center; justify-content:center; font-size:15px; }
+#sidebarBackdrop{ display:none; }
+/* Works on any viewport: hides the sidebar entirely and lets the map
+   take the freed-up width, since #mapwrap is flex:1 in the row. */
+#body.sidebar-closed #sidebar{ display:none; }
+
+/* ---------- mobile / narrow viewports ---------- */
+@media (max-width: 860px){
+  #topbar{ padding:8px 10px; gap:8px; flex-wrap:wrap; }
+  #brand .tag{ display:none; }
+  #topbar .tbtn{ padding:6px 9px; font-size:11.5px; }
+
+  /* Below this width the sidebar becomes an off-canvas drawer that
+     overlays the map instead of sharing the flex row with it — so
+     opening it never squeezes #mapwrap down to a sliver and forces
+     its overlay controls (basemap/attribute pickers, draw toolbar,
+     legend, zoom) to stack on top of one another. #body already has
+     position defined by the flex layout above; make it the drawer's
+     positioning context so "top:0" lines up right below the topbar
+     without needing to know the topbar's (variable, wrapped) height. */
+  #body{ position:relative; }
+  #sidebar{
+    position:absolute; top:0; left:0; bottom:0; z-index:800;
+    width:86vw; max-width:340px;
+    box-shadow:10px 0 28px rgba(0,0,0,.45);
+    transform:translateX(0);
+    transition:transform .22s ease;
+  }
+  #body.sidebar-closed #sidebar{
+    display:flex; /* undo the display:none from the non-mobile rule above */
+    transform:translateX(-100%);
+  }
+  #body:not(.sidebar-closed) #sidebarBackdrop{
+    display:block; position:absolute; inset:0; background:rgba(0,0,0,.45); z-index:700;
+  }
+
+  /* Map overlay controls: shrink and reflow so they fit a narrow
+     screen without overlapping each other or the draw toolbar. */
+  #attrSelectWrap, #basemapSelectWrap{
+    min-width:0; max-width:46vw; padding:6px 8px;
+  }
+  #attrSelectWrap label, #basemapSelectWrap label{ font-size:9px; margin-bottom:2px; }
+  #attrSelect, #basemapSelect{ min-width:0; width:100%; font-size:11px; }
+  /* Draw toolbar moves to the bottom so it never competes with the
+     attribute/basemap pickers pinned at the top corners. */
+  #drawToolbar{
+    top:auto; bottom:14px; left:50%; max-width:94vw;
+    flex-wrap:wrap; justify-content:center; font-size:11.5px;
+  }
+  #legend{ right:8px; bottom:34px; min-width:0; max-width:38vw; padding:8px 9px; }
+  #legend h4{ font-size:9.5px; }
+  #legendLabels{ font-size:9.5px; }
+}
 </style>
 </head>
 <body data-theme="dark">
 
 <div id="topbar">
+  <button class="tbtn" id="sidebarToggle" title="Show/hide panel" aria-expanded="true" aria-controls="sidebar">☰</button>
   <div id="brand">
     <span class="mark"></span>
     <h1>Yield Editor Pro</h1>
@@ -254,6 +310,7 @@ textarea.summaryPreview{
 </div>
 
 <div id="body">
+  <div id="sidebarBackdrop"></div>
   <div id="sidebar">
     <div id="tabs">
       <button class="tabbtn active" data-tab="import">Import</button>
@@ -2026,12 +2083,55 @@ document.querySelectorAll(".tabbtn").forEach(btn => {
   });
 });
 
+/* ---------------------------------------------------------------
+   Theme toggle. Bug fix: this used to set data-theme on <body>
+   while the CSS override selector was :root[data-theme="light"]
+   (i.e. <html>, not <body>) — the two never matched, so the click
+   handler ran and the ◐/◑ glyph changed, but no colors ever
+   actually updated. The CSS selector now targets body directly.
+   Also now remembers the choice across visits, like the basemap
+   selection already does.
+   --------------------------------------------------------------- */
+(function initTheme(){
+  let saved = null;
+  try{ saved = localStorage.getItem("yep_theme"); }catch(_){}
+  if (saved === "light" || saved === "dark"){
+    document.body.setAttribute("data-theme", saved);
+  }
+  document.getElementById("themeToggle").textContent =
+    document.body.getAttribute("data-theme") === "dark" ? "◐" : "◑";
+})();
 document.getElementById("themeToggle").addEventListener("click", () => {
   const body = document.body;
   const next = body.getAttribute("data-theme") === "dark" ? "light" : "dark";
   body.setAttribute("data-theme", next);
   document.getElementById("themeToggle").textContent = next === "dark" ? "◐" : "◑";
+  try{ localStorage.setItem("yep_theme", next); }catch(_){}
 });
+
+/* ---------------------------------------------------------------
+   Collapsible sidebar. On any viewport, the topbar button toggles
+   it. On narrow (mobile) viewports it behaves as an off-canvas
+   drawer that overlays the map — rather than sharing the flex row
+   width with it — so map overlay controls (basemap/attribute
+   pickers, draw toolbar, legend, zoom) never get squeezed and
+   stacked into an overlapping mess while the sidebar is open.
+   --------------------------------------------------------------- */
+const MOBILE_BP = 860;
+function isMobileViewport(){ return window.matchMedia(`(max-width: ${MOBILE_BP}px)`).matches; }
+const sidebarEl = document.getElementById("body");
+function setSidebarClosed(closed){
+  sidebarEl.classList.toggle("sidebar-closed", closed);
+  const btn = document.getElementById("sidebarToggle");
+  btn.setAttribute("aria-expanded", String(!closed));
+  btn.textContent = closed ? "☰" : "✕";
+}
+// Start closed on phones/small tablets (map first), open on desktop (as before).
+setSidebarClosed(isMobileViewport());
+document.getElementById("sidebarToggle").addEventListener("click", () => {
+  setSidebarClosed(!sidebarEl.classList.contains("sidebar-closed"));
+});
+document.getElementById("sidebarBackdrop").addEventListener("click", () => setSidebarClosed(true));
 
 /* ---------------------------------------------------------------
    Basemaps — free, no-API-key tile sources plus an "off" option.
@@ -2154,6 +2254,7 @@ function showDrawToolbar(label, showFinish){
 function hideDrawToolbar(){ document.getElementById("drawToolbar").style.display = "none"; }
 
 function startBoxDraw(){
+  if (isMobileViewport()) setSidebarClosed(true); // reveal the map to draw on
   cancelDraw();
   drawMode = "rect"; rectStart = null;
   map.doubleClickZoom.disable();
@@ -2161,6 +2262,7 @@ function startBoxDraw(){
   showDrawToolbar("Click one corner, then the opposite corner.", false);
 }
 function startPolygonDraw(){
+  if (isMobileViewport()) setSidebarClosed(true); // reveal the map to draw on
   cancelDraw();
   drawMode = "polygon"; polyVertices = [];
   map.doubleClickZoom.disable();
