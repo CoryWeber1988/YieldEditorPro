@@ -2244,6 +2244,9 @@ function initMap(){
 }
 
 /* ---- custom draw tools (POS box + MAN polygons), no external plugin ---- */
+function setPointsInteractive(on){
+  if (pointLayer) pointLayer.eachLayer(l => { l.options.interactive = on; });
+}
 function setCursorCrosshair(on){ document.getElementById("map").style.cursor = on ? "crosshair" : ""; }
 function showDrawToolbar(label, showFinish){
   const tb = document.getElementById("drawToolbar");
@@ -2257,6 +2260,7 @@ function startBoxDraw(){
   if (isMobileViewport()) setSidebarClosed(true); // reveal the map to draw on
   cancelDraw();
   drawMode = "rect"; rectStart = null;
+  setPointsInteractive(false);
   map.doubleClickZoom.disable();
   setCursorCrosshair(true);
   showDrawToolbar("Click one corner, then the opposite corner.", false);
@@ -2265,12 +2269,14 @@ function startPolygonDraw(){
   if (isMobileViewport()) setSidebarClosed(true); // reveal the map to draw on
   cancelDraw();
   drawMode = "polygon"; polyVertices = [];
+  setPointsInteractive(false);
   map.doubleClickZoom.disable();
   setCursorCrosshair(true);
   showDrawToolbar("Click to add points (3+), then Finish.", true);
 }
 function cancelDraw(){
   drawMode = null; rectStart = null;
+  setPointsInteractive(true);
   if (rectPreviewLayer){ map.removeLayer(rectPreviewLayer); rectPreviewLayer = null; }
   clearPolyDraftLayers();
   polyVertices = [];
@@ -2293,6 +2299,8 @@ function onMapClickForDrawing(e){
       finalizeRect(rectStart, e.latlng);
     }
   } else if (drawMode === "polygon"){
+    const last = polyVertices[polyVertices.length - 1];
+    if (last && last.equals(e.latlng, 1e-9)) return; // dblclick's second click
     polyVertices.push(e.latlng);
     updatePolyDraft();
   }
@@ -2333,6 +2341,7 @@ function finalizeRect(a, b){
   posBoxLayer = L.rectangle(bounds, { color:"#93b23f", weight:2, fillOpacity:0.07 });
   selectionLayer.addLayer(posBoxLayer);
   posBoxLayer.on("click", (ev) => {
+    if (drawMode) return;
     L.DomEvent.stopPropagation(ev);
     if (confirm("Remove this box?")) clearBox();
   });
@@ -2350,22 +2359,71 @@ function clearBox(){
   if (hint) hint.textContent = "No box drawn yet.";
 }
 
-function finalizePolygon(){
-  const layer = L.polygon(polyVertices, { color:"#c0603a", weight:2, fillOpacity:0.12 });
+const MAN_STYLE = { color:"#c0603a", weight:2, fillOpacity:0.12 };
+const manLayers = new Map(); // geojson feature -> Leaflet layer
+
+function updateManHint(removed){
+  const hint = document.getElementById("manDrawHint");
+  if (!hint) return;
+  hint.textContent = S.manPolygons.length + " polygon(s) drawn" +
+    (typeof removed === "number" && S.filters.MAN.enabled ? " — " + removed.toLocaleString() + " point(s) removed." : ".");
+}
+
+// Builds the map layer for one stored polygon and wires click-to-remove.
+function addManPolygonLayer(gj){
+  const rings = gj.geometry.coordinates.map(r => r.map(([x, y]) => [y, x])); // [lon,lat] -> [lat,lon]
+  const layer = L.polygon(rings, MAN_STYLE);
   selectionLayer.addLayer(layer);
-  const gj = layer.toGeoJSON();
-  S.manPolygons.push(gj);
+  manLayers.set(gj, layer);
   layer.on("click", (ev) => {
+    if (drawMode) return; // let the click through so vertices can be placed inside existing shapes
     L.DomEvent.stopPropagation(ev);
     if (confirm("Remove this polygon?")){
       selectionLayer.removeLayer(layer);
+      manLayers.delete(gj);
       S.manPolygons = S.manPolygons.filter(p => p !== gj);
-      document.getElementById("manDrawHint").textContent = S.manPolygons.length + " polygon(s) drawn.";
+      if (S.rawRows.length) recompute(); // restore the points it was excluding
+      updateManHint(manRemovedCount());
     }
   });
+  return layer;
+}
+
+// Redraw every stored polygon (used after loading a session).
+function redrawManPolygons(){
+  manLayers.forEach(l => selectionLayer.removeLayer(l));
+  manLayers.clear();
+  S.manPolygons.forEach(addManPolygonLayer);
+  const chk = document.getElementById("filterOn_MAN");
+  if (chk) chk.checked = !!S.filters.MAN.enabled;
+  updateManHint(manRemovedCount());
+}
+
+function manRemovedCount(){
+  const i = S.trace.findIndex(t => t.step === "MAN");
+  return i > 0 ? S.trace[i-1].count - S.trace[i].count : 0;
+}
+
+function finalizePolygon(){
+  const gj = L.polygon(polyVertices.slice()).toGeoJSON();
+  S.manPolygons.push(gj);
+  addManPolygonLayer(gj);
   cancelDraw();
-  document.getElementById("manDrawHint").textContent = S.manPolygons.length + " polygon(s) drawn.";
-  toast("Polygon added — click it to remove.");
+  // Drawing a polygon *is* the request to exclude what's inside it: turn the
+  // Manual selection filter on and re-run the pipeline immediately, instead
+  // of requiring the user to also tick MAN and press Apply Filters.
+  S.filters.MAN.enabled = true;
+  const chk = document.getElementById("filterOn_MAN");
+  if (chk) chk.checked = true;
+  if (S.rawRows.length){
+    recompute();
+    const n = manRemovedCount();
+    updateManHint(n);
+    toast("Polygon added — " + n.toLocaleString() + " point(s) removed. Click the polygon to undo.");
+  } else {
+    updateManHint();
+    toast("Polygon added — it will apply once data is loaded.");
+  }
 }
 
 document.getElementById("btnFinishDraw").addEventListener("click", () => {
@@ -2951,6 +3009,7 @@ function recompute(){
   populateBalanceOptions();
   renderPoints();
   renderSummaryPreview();
+  if (document.getElementById("manDrawHint")) updateManHint(manRemovedCount());
 }
 
 document.getElementById("btnApplyFilters").addEventListener("click", () => { readFiltersFromUI(); recompute(); });
@@ -3079,6 +3138,8 @@ function renderPoints(){
     layers.push(m);
   }
   pointLayer = L.layerGroup(layers).addTo(map);
+  setPointsInteractive(!drawMode);
+  if (selectionLayer) selectionLayer.bringToFront(); // drawn shapes stay above the points
 }
 
 function popupHtml(row, attr){
@@ -3700,6 +3761,7 @@ document.getElementById("loadSessionInput").addEventListener("change", async (e)
     applyFiltersToUI();
     if (S.columns.length) buildMappingUI();
     toast("Session settings loaded — re-import your source file if you haven't already.");
+    redrawManPolygons();
     if (S.rawRows.length) recompute();
   } catch(err){ toast("Could not load session: " + err.message, true); }
   e.target.value = "";
