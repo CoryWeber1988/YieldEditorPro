@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [2026-10-02]
+
+### Changed
+- Fixed polygon select tool.  System was drawing polygon but not actually being used to delete features.
+
 ## [2026-09-16]
 
 ### Added
