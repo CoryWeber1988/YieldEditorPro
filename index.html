@@ -495,9 +495,13 @@ textarea.summaryPreview{
               <input type="radio" name="exportColMode" id="exportModeFull" value="full" checked style="margin-top:2px;">
               <span><b>Full</b> — every original column plus whichever cleaned columns exist (<code>yield_balanced</code>, <code>yield_dry_clean</code>, <code>yield_wet_clean</code>, <code>moisture_clean</code>, balance/postcal factors).</span>
             </label>
-            <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+            <label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; cursor:pointer;">
               <input type="radio" name="exportColMode" id="exportModeStreamlined" value="streamlined" style="margin-top:2px;">
-              <span><b>Streamlined</b> — only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names, so the exported file's structure closely resembles the source file's.</span>
+              <span><b>Streamlined</b> — the source file's own columns, in their original order and under their original names, with the cleaned wet/dry/moisture values written in place of the raw ones. No extra <code>_clean</code> or <code>yield_balanced</code> columns are added, so the file keeps the structure other FMIS platforms expect to see.</span>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+              <input type="radio" name="exportColMode" id="exportModeSimplified" value="simplified" style="margin-top:2px;">
+              <span><b>Simplified</b> — only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names; every other source column is left out. Smallest file, but it will not satisfy platforms that need the full original column set.</span>
             </label>
           </div>
           <div class="hint">Applies to GeoJSON, Shapefile, and CSV point-data exports below. AgLeader Text always uses its own fixed field schema.</div>
@@ -608,7 +612,7 @@ textarea.summaryPreview{
 
         <div class="section help-block">
           <h3>Export &amp; Summary</h3>
-          <p>CSV, GeoJSON, and Shapefile exports respect the <b>Column set</b> choice at the top of the Export tab. <b>Full</b> (the previous default behaviour) includes every original column plus whichever cleaned columns exist — wherever balancing or Post-Cal produced a <code>yield_balanced</code> column, and wherever <code>yield_dry_clean</code>/<code>yield_wet_clean</code>/<code>moisture_clean</code> exist, they're included alongside the original columns. <b>Streamlined</b> instead exports only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names (plus position) — so the output file's structure closely mirrors the source file's, just with cleaned values in place, for platforms that expect to see familiar headers rather than the <code>_clean</code>-suffixed names. AgLeader Text export always uses its own fixed field schema regardless of this setting, and prefers an actual mapped Wet/Unprocessed Yield value for its Grain_Flow_lbs_sec field over back-calculating one from the per-acre Dry figure, when one is available. The Summary tab captures the source file, column mapping (including which yield column is primary), every pipeline stage's record count, all balancing and calibration factors, boundary status, and any GeoTIFF exports made in the session (including which interpolation method each used) — downloadable as Markdown or a standalone HTML file.</p>
+          <p>CSV, GeoJSON, and Shapefile exports respect the <b>Column set</b> choice at the top of the Export tab. <b>Full</b> (the previous default behaviour) includes every original column plus whichever cleaned columns exist — wherever balancing or Post-Cal produced a <code>yield_balanced</code> column, and wherever <code>yield_dry_clean</code>/<code>yield_wet_clean</code>/<code>moisture_clean</code> exist, they're included alongside the original columns. <b>Streamlined</b> exports the source file's own columns — same names, same order — with the cleaned wet/dry/moisture values written in place of the raw ones, and adds no <code>_clean</code>-suffixed or <code>yield_balanced</code> columns. Use it when another FMIS platform needs to recognise the file as a normal yield export. <b>Simplified</b> exports only the cleaned wet/dry/moisture values under their <i>original</i> column names (plus position in GeoJSON/Shapefile geometry) and drops every other source column, giving the smallest file; it will not be recognised by platforms that require the full original column set. AgLeader Text export always uses its own fixed field schema regardless of this setting, and prefers an actual mapped Wet/Unprocessed Yield value for its Grain_Flow_lbs_sec field over back-calculating one from the per-acre Dry figure, when one is available. The Summary tab captures the source file, column mapping (including which yield column is primary), every pipeline stage's record count, all balancing and calibration factors, boundary status, and any GeoTIFF exports made in the session (including which interpolation method each used) — downloadable as Markdown or a standalone HTML file.</p>
         </div>
 
         <div class="section help-block">
@@ -3253,10 +3257,12 @@ function exportColumns(){
 }
 
 /* ---------------------------------------------------------------
-   Export column-set mode: "full" (original + cleaned columns, as
-   before) vs "streamlined" (only the cleaned wet/dry/moisture
-   values, relabelled back to the ORIGINAL column names so the
-   exported file's structure closely mirrors the source file's).
+   Export column-set mode:
+     "full"        original + cleaned/added columns (_clean, yield_balanced, factors)
+     "streamlined" ALL original columns, original order and names, with the
+                   cleaned wet/dry/moisture values substituted in place
+     "simplified"  ONLY the cleaned wet/dry/moisture values, under their
+                   original column names (all other columns dropped)
    --------------------------------------------------------------- */
 function getExportMode(){
   const el = document.querySelector('input[name="exportColMode"]:checked');
@@ -3274,19 +3280,25 @@ function streamlinedColumns(){
   return pairs;
 }
 // Builds { cols, rows } for the point-data exports below, honoring the
-// Full/Streamlined column-set mode. `rows` are plain objects keyed by
+// Full/Streamlined/Simplified column-set mode. `rows` are plain objects keyed by
 // the OUTPUT column names in `cols`; Longitude/Latitude (and __poly__,
 // for polygon inputs) are always carried along on each row for the
 // geometry-building code even when they're not part of `cols` itself
-// (streamlined mode doesn't list them as attribute columns).
+// (simplified mode doesn't list them as attribute columns).
 function buildExportData(){
   const { lon, lat } = S.mapping;
   const mode = getExportMode();
   let outNames, srcKeys;
-  if (mode === "streamlined"){
+  if (mode === "simplified"){
     const pairs = streamlinedColumns();
     outNames = pairs.map(p => p[0]);
     srcKeys = pairs.map(p => p[1]);
+  } else if (mode === "streamlined"){
+    // Every original column, untouched and in source order — except that
+    // the mapped dry/wet/moisture columns read from their cleaned values.
+    const swap = new Map(streamlinedColumns());
+    outNames = [...S.columns];
+    srcKeys = outNames.map(c => swap.get(c) || c);
   } else {
     outNames = exportColumns();
     srcKeys = outNames;
@@ -3311,7 +3323,7 @@ function csvEscape(v){
 document.getElementById("btnExportCsv").addEventListener("click", () => {
   if (!requireData()) return;
   const { cols, rows } = buildExportData();
-  if (!cols.length){ toast("Streamlined mode has no cleaned wet/dry/moisture columns to export yet — run Filters first, or switch to Full.", true); return; }
+  if (!cols.length){ toast("Simplified mode has no cleaned wet/dry/moisture columns to export yet — run Filters first, or switch to Full or Streamlined.", true); return; }
   const lines = [cols.join(",")];
   for (const r of rows) lines.push(cols.map(c=>csvEscape(r[c])).join(","));
   downloadBlob(lines.join("\n"), baseName()+"_export.csv", "text/csv");
