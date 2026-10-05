@@ -21,6 +21,10 @@
   Filter/balance/calibrate methodology based on USDA-ARS Yield Editor —
   see README.md for attribution. This is an independent reimplementation,
   not official USDA software.
+
+  Flow-delay detection (Flow Delay tab) implements the phase correlation
+  delay identification (PCDI) method of Lee, Sudduth, Drummond, Chung and
+  Myers (2012), Trans. ASABE 55(3): 743-752.
 -->
 <html lang="en">
 <head>
@@ -236,6 +240,45 @@ textarea.summaryPreview{
   font-family:var(--mono); font-size:11px; padding:8px; border-radius:var(--radius); resize:vertical;
 }
 
+
+/* ---------- flow delay tab ---------- */
+.dly-card{background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:10px;}
+.dly-big{font-family:var(--mono); font-size:24px; color:var(--accent2); font-weight:700; line-height:1.15;}
+.dly-sub{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.5;}
+.progress{height:6px; background:var(--panel2); border:1px solid var(--line); border-radius:3px; overflow:hidden; margin-top:8px; display:none;}
+.progress > div{height:100%; width:0; background:var(--accent); transition:width .12s;}
+.badge.conf-high{color:var(--accent2); border-color:var(--accent);}
+.badge.conf-med{color:var(--gold); border-color:var(--gold);}
+.badge.conf-low{color:var(--rust); border-color:var(--rust);}
+.warnlist{margin:8px 0 0; padding-left:16px; font-size:11px; color:var(--gold); line-height:1.55;}
+.warnlist li{margin-bottom:3px;}
+.warnlist li.bad{color:var(--rust);}
+canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius);}
+.chk-line{display:flex; align-items:flex-start; gap:8px; font-size:12px; margin-bottom:9px; cursor:pointer; line-height:1.4;}
+.chk-line input{accent-color:var(--accent); width:15px; height:15px; flex:0 0 auto; margin-top:1px;}
+.warn-text{color:var(--rust);}
+#btnCompare.active{border-color:var(--accent); color:var(--accent2); background:var(--panel);}
+
+/* ---------- raw | clean side-by-side ---------- */
+#mapRaw{display:none; position:absolute; top:0; bottom:0; left:0; width:50%; background:#0b0c08; border-right:2px solid var(--accent); z-index:1;}
+#compareBar{
+  display:none; position:absolute; top:0; left:0; right:0; height:36px; z-index:550;
+  background:var(--panel); border-bottom:1px solid var(--line); font-size:11.5px;
+}
+.cmp-half{flex:1 1 50%; min-width:0; display:flex; align-items:center; gap:8px; padding:0 12px; overflow:hidden; white-space:nowrap;}
+.cmp-half + .cmp-half{border-left:2px solid var(--accent);}
+.cmp-tag{font-family:var(--mono); font-size:11px; letter-spacing:.06em; padding:2px 7px; border-radius:2px;}
+.cmp-tag.raw{background:var(--rust); color:#fff;}
+.cmp-tag.clean{background:var(--accent); color:#0f1207;}
+.cmp-sub{color:var(--muted);}
+.cmp-stats{font-family:var(--mono); color:var(--muted); overflow:hidden; text-overflow:ellipsis;}
+#cmpStepSel{width:auto; max-width:230px; padding:3px 6px; font-size:11.5px; flex:0 1 auto;}
+#mapwrap.compare #compareBar{display:flex;}
+#mapwrap.compare #mapRaw{display:block; top:36px;}
+#mapwrap.compare #map{left:50%; top:36px;}
+#mapwrap.compare #attrSelectWrap{display:none;}
+#mapwrap.compare #basemapSelectWrap, #mapwrap.compare #drawToolbar{top:50px;}
+
 /* ---------- collapsible sidebar ---------- */
 #sidebarToggle{ width:34px; height:34px; padding:0; display:flex; align-items:center; justify-content:center; font-size:15px; }
 #sidebarBackdrop{ display:none; }
@@ -289,6 +332,15 @@ textarea.summaryPreview{
   #legend{ right:8px; bottom:34px; min-width:0; max-width:38vw; padding:8px 9px; }
   #legend h4{ font-size:9.5px; }
   #legendLabels{ font-size:9.5px; }
+
+  /* raw | clean: stack the two panes vertically on narrow screens */
+  #mapwrap.compare #mapRaw{ width:100%; bottom:auto; height:calc(50% - 18px); border-right:none; border-bottom:2px solid var(--accent); }
+  #mapwrap.compare #map{ left:0; top:calc(50% + 18px); }
+  #mapwrap.compare #basemapSelectWrap{ top:calc(50% + 26px); }
+  .cmp-sub, .cmp-stats{ display:none; }
+  .cmp-half{ padding:0 8px; }
+  #cmpStepSel{ max-width:100%; }
+  #btnCompare{ padding:6px 8px; }
 }
 </style>
 </head>
@@ -302,6 +354,7 @@ textarea.summaryPreview{
     <span class="tag">Web</span>
   </div>
   <div class="spacer"></div>
+  <button class="tbtn" id="btnCompare" title="Show the raw and cleaned yield maps side by side">⇆ Raw | Clean</button>
   <button class="tbtn" id="btnSaveSession" title="Save session settings (.json)">Save Session</button>
   <label class="tbtn" title="Load session settings (.json)">Load Session
     <input type="file" id="loadSessionInput" accept=".json,.yesession" style="display:none;">
@@ -314,6 +367,7 @@ textarea.summaryPreview{
   <div id="sidebar">
     <div id="tabs">
       <button class="tabbtn active" data-tab="import">Import</button>
+      <button class="tabbtn" data-tab="delay">Flow Delay</button>
       <button class="tabbtn" data-tab="balance">Balance</button>
       <button class="tabbtn" data-tab="filters">Filters</button>
       <button class="tabbtn" data-tab="postcal">Post-Cal</button>
@@ -374,6 +428,57 @@ textarea.summaryPreview{
               <select id="unitAltitude"></select>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ============ FLOW DELAY ============ -->
+      <div class="panel" id="panel-delay">
+        <div class="section">
+          <h3>Detect grain-flow delay</h3>
+          <div class="hint" style="margin-top:0; margin-bottom:10px;">Finds the time lag between the header cutting the crop and the flow sensor measuring it, using phase correlation (Lee et al. 2012, Trans. ASABE 55(3)). The analysis runs on the file <b>exactly as imported</b> — before balancing, filters or any other cleaning — so nothing done on the other tabs can bias the answer. An incorrect delay shows up as the “sawtooth” pattern between alternate passes; the correct delay is the one that makes neighbouring passes agree best.</div>
+          <div class="row">
+            <div class="field"><label>Search from (s)</label><input type="number" id="dlyMin" value="-10" step="1"></div>
+            <div class="field"><label>to (s)</label><input type="number" id="dlyMax" value="25" step="1"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Noise fields</label><input type="number" id="dlyIters" value="10" min="1" max="30" step="1"></div>
+            <div class="field"><label>Interval if no timestamps (s)</label><input type="number" id="dlyDt" value="1" min="0.1" step="0.1"></div>
+          </div>
+          <div class="field"><label>Pixel size (m) — leave blank for automatic</label><input type="number" id="dlyPx" min="0.5" step="0.1" placeholder="auto: 0.7 × swath, else paper's pixel-ratio rule"></div>
+          <div class="btn-row">
+            <button class="btn primary" id="btnDelayAnalyze">Analyze raw data</button>
+            <button class="btn ghost" id="btnDelayCancel" style="display:none;">Cancel</button>
+          </div>
+          <div class="progress" id="dlyProgress"><div id="dlyProgressBar"></div></div>
+          <div class="hint" id="dlyStatus">Import data and map Longitude, Latitude and a yield column first.</div>
+        </div>
+
+        <div class="section" id="dlyResultSection" style="display:none;">
+          <h3>Result</h3>
+          <div class="dly-card">
+            <div class="dly-big" id="dlyBest">—</div>
+            <div class="dly-sub" id="dlyBestSub">—</div>
+          </div>
+          <canvas id="dlyChart"></canvas>
+          <div class="hint">Mean relative spatial consistency (RSC) at each trial delay; the shaded band is the min–max across the noise fields. The highest point is the recommended delay.</div>
+          <div class="stat-grid" id="dlyStats" style="margin-top:10px;"></div>
+          <ul class="warnlist" id="dlyWarnings"></ul>
+        </div>
+
+        <div class="section">
+          <h3>Apply before all other steps</h3>
+          <label class="chk-line"><input type="checkbox" id="dlyEnabled"><span>Apply flow-delay correction first — before Balance and Filters</span></label>
+          <div class="field">
+            <label>Delay to apply (s) — positive reads yield from later in the pass</label>
+            <input type="number" id="dlyApply" step="1" value="0">
+          </div>
+          <label class="chk-line"><input type="checkbox" id="dlyShiftMoisture" checked><span>Also shift Moisture by the same delay (the other yield column always follows)</span></label>
+          <div class="btn-row">
+            <button class="btn primary" id="btnDelayUseRec" disabled>Use recommended</button>
+            <button class="btn" id="btnDelayApply">Apply settings</button>
+          </div>
+          <div class="hint" id="dlyApplyHint"></div>
+          <div class="hint">Open <b>⇆ Raw | Clean</b> in the top bar to watch the effect side by side. The delay is relative to the file as imported: if the monitor export already applied a delay, this is the <i>additional</i> correction. Don't also enable the observation-based <b>Grain flow delay</b> filter — the two would stack.</div>
         </div>
       </div>
 
@@ -584,6 +689,23 @@ textarea.summaryPreview{
         </div>
 
         <div class="section help-block">
+          <h3>Flow Delay (automatic detection)</h3>
+          <p>Grain takes several seconds to travel from the header to the flow sensor, so each logged yield actually belongs to a spot the combine passed a few seconds earlier. Left uncorrected, alternate passes are displaced in opposite directions and the map shows a “sawtooth” stripe pattern. The <b>Flow Delay</b> tab finds the correcting delay automatically using <i>phase correlation delay identification</i> (PCDI).</p>
+          <p><b>How it works.</b> For every trial delay (default −10 to +25 s) the yield of each point is re-read from that many seconds later along its own pass, and the points are drawn onto a square raster. The raster is compared with a copy of itself shifted one pixel diagonally, which pairs each pass with its neighbour. Empty pixels are filled with identical Gaussian white noise in both images so they cannot create fake similarity. The phase-correlation value at zero offset is the <b>relative spatial consistency (RSC)</b>: the delay with the highest RSC is the one that makes neighbouring passes agree best. The whole test is repeated with several independent noise fields (default 10); the average curve picks the answer and the spread of the individual answers measures its reliability.</p>
+          <p><b>Sign.</b> A positive delay means the yield recorded at a position was really measured that many seconds <i>later</i> — the same direction as the Grain flow delay filter. The result is relative to the file as imported, so if the monitor export already applied a delay (AgLeader exports commonly apply 12 s) it is the <i>additional</i> correction, usually near zero.</p>
+          <p><b>Pixel size.</b> If a Swath width column is mapped the pixel size is 0.7 × the median swath, so that adjacent passes fall in adjacent pixels. Otherwise it is taken from the point where the ratio of valid pixels and the ratio of coupled pixels cross, as described in the paper. The image side is rounded up to a power of 2 for the FFT; pixels beyond the field are treated as empty. You can type a pixel size to override either.</p>
+          <p><b>Reading the result.</b> Confidence is <i>Low</i> when the individual noise-field answers disagree by more than 3 s (the paper's criterion for a questionable estimate), when the peak sits on the edge of the search range, or when the curve is nearly flat; <i>Medium</i> for moderate spread or fewer than 5,000 points. In the paper's 50-field test about 90% of estimates were accurate; the failures were nearly all small fields with few points or very little yield variation. If confidence is Low, widen the range, compare the Raw | Clean view by eye, or enter a delay you trust.</p>
+          <p><b>Applying it.</b> <b>Use recommended</b> (or typing a value and pressing <b>Apply settings</b>) makes the correction the very first pipeline step — before balancing and every filter — re-reading yield (and the other yield column and, optionally, Moisture) at the shifted time within each pass. Readings that would fall beyond the start or end of a pass are dropped. One delay is applied to the whole file; if a file mixes combines with different delays, analyse and correct them separately.</p>
+          <p>Reference: Lee, D. H., K. A. Sudduth, S. T. Drummond, S. O. Chung and D. B. Myers. 2012. Automated yield map delay identification using phase correlation methodology. <i>Trans. ASABE</i> 55(3): 743-752. This is an independent implementation, not the authors' software.</p>
+        </div>
+
+        <div class="section help-block">
+          <h3>Raw | Clean side-by-side view</h3>
+          <p>The <b>⇆ Raw | Clean</b> button in the top bar splits the map. The left side always shows the data exactly as imported; the right side shows the result of your processing and redraws every time you press an Apply button (flow-delay correction, balancing, filters, Post-Cal). Both sides use the same colour scale — taken from the raw data's 2nd–98th percentile — so a change in colour is a real change in value, and the two maps pan and zoom together. The header over each side shows record count, mean and standard deviation.</p>
+          <p>The drop-down in the right-hand header lets you step back through the pipeline: pick any earlier stage (imported, after flow-delay correction, after each balance or filter that is enabled) to see the map as it was at that point. <b>Final result</b> always follows the latest run. While this view is open the map is coloured by yield only; close it to get the “Colour map by” attribute picker back. Box and polygon drawing still work on the right-hand map.</p>
+        </div>
+
+        <div class="section help-block">
           <h3>Balance</h3>
           <p><b>Date balancing</b> and <b>machine balancing</b> each scale a group's mean yield to match a base group you pick (mean-ratio scaling) — useful when harvest conditions or a monitor's calibration drifted across days, or when one combine in a fleet reads consistently high or low. Both operate on the primary yield column only.</p>
           <p><b>Moisture balancing</b> is different: it computes its scaling factor from the ratio of average <i>moisture</i> readings between machines, not average yield, then applies that factor to yield. Use it when you believe two machines' yield means genuinely differ for real agronomic reasons, but one machine's moisture meter is separately out of calibration — scaling by the yield ratio directly would erase real field variation along with the sensor error, while scaling by the moisture ratio targets the sensor issue specifically. Requires Machine ID and Moisture mapped.</p>
@@ -635,6 +757,11 @@ textarea.summaryPreview{
   </div>
 
   <div id="mapwrap">
+    <div id="compareBar">
+      <div class="cmp-half"><b class="cmp-tag raw">RAW</b><span class="cmp-sub">as imported</span><span class="cmp-stats" id="cmpRawStats"></span></div>
+      <div class="cmp-half"><b class="cmp-tag clean">CLEAN</b><select id="cmpStepSel" title="Which processing step to show on this side"></select><span class="cmp-stats" id="cmpCleanStats"></span></div>
+    </div>
+    <div id="mapRaw"></div>
     <div id="map"></div>
     <div id="basemapSelectWrap">
       <label>Background map</label>
@@ -1988,6 +2115,450 @@ if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid };
 </script>
 
 <script>
+/* ===== delay-pcdi.js ===== */
+/* ============================================================
+   Automated grain-flow delay identification — Phase Correlation
+   Delay Identification (PCDI).
+
+   Method: Lee, D. H., K. A. Sudduth, S. T. Drummond, S. O. Chung
+   and D. B. Myers. 2012. Automated yield map delay identification
+   using phase correlation methodology. Trans. ASABE 55(3): 743-752.
+
+   Summary of the implementation
+   1. Points are grouped into combine passes (already done by
+      computeTransects) and each pass gets its own time axis.
+   2. For every candidate delay d the yield of each point is
+      re-read at (t + d) along its own pass, so d > 0 means "the
+      yield seen at this position was actually measured d seconds
+      later" — the same sign convention as the Grain flow delay
+      filter.
+   3. The shifted points are rasterised onto a square N x N grid
+      (N = power of 2). N is picked from the point where the ratio
+      of valid pixels and the ratio of coupled pixels cross (Eqs 5-6
+      of the paper), then rounded up to the next power of 2.
+   4. Image G1 and its (1,1)-translated copy G2 are compared. Pixels
+      that are empty in either image are replaced, in BOTH images,
+      by the same Gaussian white noise (pixel coupling + GWN).
+   5. The phase-correlation coefficient at the origin, c(0,0), is the
+      "relative spatial consistency" (RSC). Because
+      P(0,0) = mean over all frequencies of the normalised
+      cross-power spectrum, no inverse FFT is needed.
+   6. RSC is averaged over several independent noise fields and the
+      delay with the largest mean RSC is recommended; the spread of
+      the per-field answers is the reliability indicator.
+   ============================================================ */
+const PCDI = (function(){
+
+  /* ---------- FFT (iterative radix-2) ---------- */
+  const plans = {};
+  function plan(n){
+    if (plans[n]) return plans[n];
+    const bits = Math.round(Math.log2(n));
+    const rev = new Uint32Array(n);
+    for (let i = 0; i < n; i++){
+      let r = 0, x = i;
+      for (let b = 0; b < bits; b++){ r = (r << 1) | (x & 1); x >>= 1; }
+      rev[i] = r;
+    }
+    const cos = new Float64Array(n >> 1), sin = new Float64Array(n >> 1);
+    for (let k = 0; k < (n >> 1); k++){ cos[k] = Math.cos(2*Math.PI*k/n); sin[k] = Math.sin(2*Math.PI*k/n); }
+    return (plans[n] = { n, rev, cos, sin });
+  }
+  function fft1d(re, im, p){
+    const n = p.n, rev = p.rev, cs = p.cos, sn = p.sin;
+    for (let i = 0; i < n; i++){
+      const j = rev[i];
+      if (j > i){ let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let size = 2; size <= n; size <<= 1){
+      const half = size >> 1, step = n / size;
+      for (let i = 0; i < n; i += size){
+        for (let j = 0, k = 0; j < half; j++, k += step){
+          const wr = cs[k], wi = -sn[k];
+          const a = i + j, b = a + half;
+          const tr = re[b]*wr - im[b]*wi, ti = re[b]*wi + im[b]*wr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti;
+          re[a] += tr;        im[a] += ti;
+        }
+      }
+    }
+  }
+  function fft2d(re, im, N, tr, ti){
+    const p = plan(N);
+    for (let r = 0; r < N; r++){
+      fft1d(re.subarray(r*N, (r+1)*N), im.subarray(r*N, (r+1)*N), p);
+    }
+    for (let c = 0; c < N; c++){
+      for (let r = 0; r < N; r++){ tr[r] = re[r*N + c]; ti[r] = im[r*N + c]; }
+      fft1d(tr, ti, p);
+      for (let r = 0; r < N; r++){ re[r*N + c] = tr[r]; im[r*N + c] = ti[r]; }
+    }
+  }
+
+  /* ---------- seeded Gaussian white noise ---------- */
+  function mulberry32(seed){
+    let a = seed >>> 0;
+    return function(){
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function fillGaussian(out, seed){
+    const rand = mulberry32(seed);
+    for (let i = 0; i < out.length; i += 2){
+      let u = 0; while (u === 0) u = rand();
+      const v = rand(), m = Math.sqrt(-2*Math.log(u));
+      out[i] = m*Math.cos(2*Math.PI*v);
+      if (i + 1 < out.length) out[i+1] = m*Math.sin(2*Math.PI*v);
+    }
+  }
+
+  /* ---------- per-pass time axis ---------- */
+  // tsArr: Float64Array/array of unix seconds (NaN allowed) or null.
+  // Returns strictly increasing times so interpolation is always well-posed.
+  function passTimes(tsArr, n, assumedDt){
+    const t = new Float64Array(n);
+    if (n < 2){ return { t, dt: assumedDt, mode: "assumed" }; }
+    if (tsArr){
+      let finite = true, strict = true;
+      for (let i = 0; i < n; i++){
+        if (!isFinite(tsArr[i])){ finite = false; break; }
+        if (i > 0 && !(tsArr[i] > tsArr[i-1])) strict = false;
+      }
+      if (finite){
+        const span = tsArr[n-1] - tsArr[0];
+        if (strict){
+          const diffs = new Float64Array(n-1);
+          for (let i = 1; i < n; i++){ t[i] = tsArr[i] - tsArr[0]; diffs[i-1] = tsArr[i] - tsArr[i-1]; }
+          diffs.sort();
+          const dt = diffs[diffs.length >> 1];
+          if (dt >= 0.05 && dt <= 30) return { t, dt, mode: "timestamp" };
+        } else if (span > 0){
+          // duplicate timestamps (1 s clock, faster logging) -> spread evenly across the pass
+          const dt = span / (n - 1);
+          if (dt >= 0.05 && dt <= 30){
+            for (let i = 0; i < n; i++) t[i] = i * dt;
+            return { t, dt, mode: "regularized" };
+          }
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) t[i] = i * assumedDt;
+    return { t, dt: assumedDt, mode: "assumed" };
+  }
+
+  // Re-read each column at (t + d). clamp=true holds the end values when the
+  // target runs off the pass (analysis); clamp=false marks the point as
+  // unavailable (ok=0) unless it is within `tol` seconds of the pass end.
+  function shiftColumns(t, cols, outs, d, tol, clamp, ok){
+    const n = t.length, nc = cols.length;
+    if (n === 0) return;
+    const t0 = t[0], tn = t[n-1];
+    let j = 0;
+    for (let k = 0; k < n; k++){
+      let target = t[k] + d;
+      if (target < t0 - tol || target > tn + tol){
+        if (!clamp){ if (ok) ok[k] = 0; continue; }
+      }
+      if (ok) ok[k] = 1;
+      if (target <= t0 || n === 1){ for (let c = 0; c < nc; c++) outs[c][k] = cols[c][0]; continue; }
+      if (target >= tn){ for (let c = 0; c < nc; c++) outs[c][k] = cols[c][n-1]; continue; }
+      while (j + 1 < n && t[j+1] <= target) j++;
+      const f = (target - t[j]) / (t[j+1] - t[j]);
+      for (let c = 0; c < nc; c++){
+        const a = cols[c][j], b = cols[c][j+1];
+        let v;
+        if (a === a && b === b) v = a + (b - a)*f;     // both finite (NaN !== NaN)
+        else if (a === a) v = f < 0.5 ? a : NaN;
+        else if (b === b) v = f >= 0.5 ? b : NaN;
+        else v = NaN;
+        outs[c][k] = v;
+      }
+    }
+  }
+
+  /* ---------- prepare data for analysis ---------- */
+  // rows: objects carrying __transect (computeTransects). cfg: {lonCol,latCol,tsCol,yieldCol,assumedDt}
+  function prepare(rows, cfg){
+    const groups = new Map();
+    for (let i = 0; i < rows.length; i++){
+      const r = rows[i];
+      const lo = parseFloat(r[cfg.lonCol]), la = parseFloat(r[cfg.latCol]);
+      if (!isFinite(lo) || !isFinite(la)) continue;
+      let g = groups.get(r.__transect);
+      if (!g){ g = []; groups.set(r.__transect, g); }
+      g.push(i);
+    }
+    let n = 0; for (const g of groups.values()) n += g.length;
+    // local metric projection
+    let sumLat = 0, sumLon = 0;
+    for (const g of groups.values()) for (const i of g){ sumLat += parseFloat(rows[i][cfg.latCol]); sumLon += parseFloat(rows[i][cfg.lonCol]); }
+    const lat0 = sumLat / n, lon0 = sumLon / n;
+    const mx = 111320 * Math.cos(lat0 * Math.PI/180), my = 110540;
+
+    const X = new Float64Array(n), Y = new Float64Array(n), T = new Float64Array(n), V = new Float64Array(n);
+    const passOff = [0];
+    const modes = { timestamp:0, regularized:0, assumed:0 };
+    const dts = [];
+    let k = 0, minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const g of groups.values()){
+      const ts = cfg.tsCol ? g.map(i => parseTimestampToUnix(rows[i][cfg.tsCol])) : null;
+      const pt = passTimes(ts, g.length, cfg.assumedDt || 1);
+      modes[pt.mode] += g.length;
+      if (g.length >= 10) dts.push(pt.dt);
+      for (let q = 0; q < g.length; q++, k++){
+        const r = rows[g[q]];
+        X[k] = (parseFloat(r[cfg.lonCol]) - lon0) * mx;
+        Y[k] = (parseFloat(r[cfg.latCol]) - lat0) * my;
+        T[k] = pt.t[q];
+        const v = parseFloat(r[cfg.yieldCol]);
+        V[k] = isFinite(v) ? v : NaN;
+        if (X[k] < minX) minX = X[k]; if (X[k] > maxX) maxX = X[k];
+        if (Y[k] < minY) minY = Y[k]; if (Y[k] > maxY) maxY = Y[k];
+      }
+      passOff.push(k);
+    }
+    dts.sort((a,b) => a-b);
+    const dtMedian = dts.length ? dts[dts.length >> 1] : (cfg.assumedDt || 1);
+    let sum = 0, cnt = 0;
+    for (let i = 0; i < n; i++) if (V[i] === V[i]){ sum += V[i]; cnt++; }
+    const mu = cnt ? sum/cnt : 0;
+    let ss = 0;
+    for (let i = 0; i < n; i++) if (V[i] === V[i]) ss += (V[i]-mu)*(V[i]-mu);
+    const sd = cnt > 1 ? Math.sqrt(ss/cnt) : 1;
+    const W = maxX - minX, H = maxY - minY;
+    return {
+      n, nValid: cnt, X, Y, T, V, passOff: Int32Array.from(passOff), nPasses: passOff.length - 1,
+      minX, minY, D: Math.max(W, H, 1) * (1 + 1e-9), W, H, dtMedian, modes, mu, sd: sd || 1,
+    };
+  }
+
+  function shiftedValues(prep, d, out){
+    const P = prep.nPasses, off = prep.passOff;
+    for (let p = 0; p < P; p++){
+      const s = off[p], e = off[p+1];
+      shiftColumns(prep.T.subarray(s,e), [prep.V.subarray(s,e)], [out.subarray(s,e)], d, 0, true, null);
+    }
+  }
+
+  /* ---------- raster size selection (Eqs 5 & 6) ---------- */
+  function pixelIndex(prep, N, ps){
+    ps = ps || prep.D / N;
+    const out = new Int32Array(prep.n);
+    for (let i = 0; i < prep.n; i++){
+      const ix = Math.min(N-1, Math.floor((prep.X[i] - prep.minX) / ps));
+      const iy = Math.min(N-1, Math.floor((prep.Y[i] - prep.minY) / ps));
+      out[i] = iy*N + ix;
+    }
+    return out;
+  }
+  function selectRasterSize(prep, maxN){
+    const mask = new Uint8Array(2048*2048);
+    const curve = [];
+    const seen = new Set();
+    for (let k = 0; k <= 36; k++){
+      const N = Math.round(32 * Math.pow(2, k/6));
+      if (N > 2048 || seen.has(N)) continue;
+      seen.add(N);
+      mask.fill(0, 0, N*N);
+      const pix = pixelIndex(prep, N, prep.D / N);
+      let validPix = 0;
+      for (let i = 0; i < prep.n; i++){
+        if (prep.V[i] === prep.V[i] && !mask[pix[i]]){ mask[pix[i]] = 1; validPix++; }
+      }
+      let coupled = 0;
+      for (let iy = 1; iy < N; iy++){
+        for (let ix = 1; ix < N; ix++){
+          const p = iy*N + ix;
+          if (mask[p] && mask[p - N - 1]) coupled++;
+        }
+      }
+      curve.push({ N, validRatio: validPix / Math.max(1, prep.nValid), coupledRatio: validPix ? coupled / validPix : 0 });
+    }
+    // intersection of the two ratios
+    let cross = null;
+    for (let i = 1; i < curve.length; i++){
+      const d0 = curve[i-1].validRatio - curve[i-1].coupledRatio;
+      const d1 = curve[i].validRatio   - curve[i].coupledRatio;
+      if (d0 < 0 && d1 >= 0){
+        const f = -d0 / (d1 - d0);
+        cross = curve[i-1].N + f * (curve[i].N - curve[i-1].N);
+        break;
+      }
+    }
+    if (cross === null){
+      let best = curve[0], bd = Infinity;
+      for (const c of curve){ const d = Math.abs(c.validRatio - c.coupledRatio); if (d < bd){ bd = d; best = c; } }
+      cross = best.N;
+    }
+    // The intersection fixes the PIXEL SIZE (adjacent passes must land in
+    // adjacent pixels for pixel coupling to work). The FFT needs a power-of-2
+    // image side, so the image is the next power of 2 at/above the intersection;
+    // any pixels beyond the data extent are simply invalid and get noise.
+    const cap = maxN || 1024;
+    cross = Math.max(32, Math.min(cross, cap));
+    const ps = prep.D / cross;
+    let N = Math.pow(2, Math.ceil(Math.log2(cross)));
+    N = Math.max(64, Math.min(cap, N));
+    return { N, ps, cross, curve };
+  }
+
+  /* ---------- RSC for one delay / one noise field ---------- */
+  function makeWorkspace(N, n){
+    return {
+      re: new Float64Array(N*N), im: new Float64Array(N*N),
+      sum: new Float64Array(N*N), cnt: new Uint16Array(N*N),
+      tr: new Float64Array(N), ti: new Float64Array(N),
+      vs: new Float64Array(n),
+    };
+  }
+  function rscForDelay(prep, pix, N, d, noise, ws){
+    shiftedValues(prep, d, ws.vs);
+    const { sum, cnt, re, im, vs } = ws;
+    sum.fill(0); cnt.fill(0);
+    for (let i = 0; i < prep.n; i++){
+      const v = vs[i];
+      if (v === v){ const p = pix[i]; sum[p] += v; cnt[p]++; }
+    }
+    const mu = prep.mu, isd = 1 / prep.sd;
+    for (let iy = 0; iy < N; iy++){
+      for (let ix = 0; ix < N; ix++){
+        const p = iy*N + ix;
+        if (ix >= 1 && iy >= 1 && cnt[p] > 0 && cnt[p-N-1] > 0){
+          re[p] = (sum[p]/cnt[p] - mu) * isd;
+          im[p] = (sum[p-N-1]/cnt[p-N-1] - mu) * isd;
+        } else {
+          re[p] = im[p] = noise[p];            // same GWN in both images
+        }
+      }
+    }
+    fft2d(re, im, N, ws.tr, ws.ti);
+    // P(0,0) = mean_k Re( F1 conj(F2) / |F1 conj(F2)| ), with F1, F2 unpacked from Z = F1 + iF2
+    let acc = 0;
+    for (let v = 0; v < N; v++){
+      const vm = (N - v) % N;
+      for (let u = 0; u < N; u++){
+        const um = (N - u) % N;
+        const k = v*N + u, km = vm*N + um;
+        const a = re[k], b = im[k], a2 = re[km], b2 = im[km];
+        const re1 = (a + a2)*0.5, im1 = (b - b2)*0.5;
+        const re2 = (b + b2)*0.5, im2 = (a2 - a)*0.5;
+        const cr = re1*re2 + im1*im2, ci = im1*re2 - re1*im2;
+        const mag = Math.sqrt(cr*cr + ci*ci);
+        if (mag > 1e-12) acc += cr / mag;
+      }
+    }
+    return acc / (N*N);
+  }
+
+  /* ---------- full analysis ---------- */
+  // cfg: {rangeMin, rangeMax, iterations, raster:'auto'|number, maxN, seed}
+  async function run(prep, cfg, onProgress, shouldCancel){
+    const cap = cfg.maxN || 1024;
+    let sel;
+    if (cfg.pixelSize && cfg.pixelSize > 0){
+      // explicit pixel size (m) — e.g. a fraction of the header width
+      const ps = Math.max(cfg.pixelSize, prep.D / cap);
+      const N = Math.max(64, Math.min(cap, Math.pow(2, Math.ceil(Math.log2(prep.D / ps)))));
+      sel = { N, ps, cross: prep.D / ps, curve: null, method: "pixel size given" };
+    } else {
+      sel = selectRasterSize(prep, cap);
+      sel.method = "valid/coupled pixel-ratio intersection";
+    }
+    const N = sel.N;
+    const pix = pixelIndex(prep, N, sel.ps);
+    const ws = makeWorkspace(N, prep.n);
+    const noise = new Float32Array(N*N);
+    const delays = [];
+    for (let d = Math.round(cfg.rangeMin); d <= Math.round(cfg.rangeMax); d++) delays.push(d);
+    const iters = Math.max(1, Math.round(cfg.iterations || 10));
+    const rsc = [];
+    const total = iters * delays.length;
+    let done = 0, lastYield = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    for (let it = 0; it < iters; it++){
+      fillGaussian(noise, (cfg.seed || 20120501) + it*7919);
+      const row = new Float64Array(delays.length);
+      for (let di = 0; di < delays.length; di++){
+        if (shouldCancel && shouldCancel()) return null;
+        row[di] = rscForDelay(prep, pix, N, delays[di], noise, ws);
+        done++;
+        if (now() - lastYield > 40){
+          if (onProgress) onProgress(done/total, `noise field ${it+1}/${iters} · delay ${delays[di]} s`);
+          await new Promise(r => setTimeout(r, 0));
+          lastYield = now();
+        }
+      }
+      rsc.push(row);
+    }
+    if (onProgress) onProgress(1, "done");
+
+    const nD = delays.length;
+    const mean = new Float64Array(nD), lo = new Float64Array(nD).fill(Infinity), hi = new Float64Array(nD).fill(-Infinity);
+    for (const row of rsc) for (let i = 0; i < nD; i++){ mean[i] += row[i]/iters; if (row[i] < lo[i]) lo[i] = row[i]; if (row[i] > hi[i]) hi[i] = row[i]; }
+    let bi = 0; for (let i = 1; i < nD; i++) if (mean[i] > mean[bi]) bi = i;
+    const perIter = rsc.map(row => { let b = 0; for (let i = 1; i < nD; i++) if (row[i] > row[b]) b = i; return delays[b]; });
+    const pm = perIter.reduce((a,b)=>a+b,0)/perIter.length;
+    const sd = Math.sqrt(perIter.reduce((a,b)=>a+(b-pm)*(b-pm),0)/perIter.length);
+    const sorted = Array.from(mean).sort((a,b)=>a-b);
+    const median = sorted[sorted.length >> 1];
+    const contrast = (mean[bi] - median) / (Math.abs(median) + 1e-12);
+    return {
+      delays, mean: Array.from(mean), lo: Array.from(lo), hi: Array.from(hi),
+      best: delays[bi], bestIndex: bi, perIter, sd, contrast,
+      atEdge: (bi === 0 || bi === nD - 1),
+      N, pixelSize: sel.ps, crossN: sel.cross, rasterCurve: sel.curve,
+      iterations: iters,
+    };
+  }
+
+  /* ---------- apply a delay to the real data (pipeline step 0) ---------- */
+  // rows: array of row objects with __transect. cols: columns to re-read (first = primary yield).
+  // Returns { rows, dropped, modes }.
+  function applyDelay(rows, cfg){
+    const d = cfg.delay;
+    if (!d) return { rows, dropped: 0, modes: null };
+    const groups = new Map();
+    for (let i = 0; i < rows.length; i++){
+      const t = rows[i].__transect;
+      let g = groups.get(t); if (!g){ g = []; groups.set(t, g); }
+      g.push(i);
+    }
+    const cols = cfg.cols.filter(Boolean);
+    const out = new Array(rows.length);
+    const modes = { timestamp:0, regularized:0, assumed:0 };
+    for (const g of groups.values()){
+      const n = g.length;
+      const ts = cfg.tsCol ? g.map(i => parseTimestampToUnix(rows[i][cfg.tsCol])) : null;
+      const pt = passTimes(ts, n, cfg.assumedDt || 1);
+      modes[pt.mode] += n;
+      if (n < 2) continue;                               // nothing to read from
+      const colArrs = cols.map(c => Float64Array.from(g, i => { const v = parseFloat(rows[i][c]); return isFinite(v) ? v : NaN; }));
+      const outs = cols.map(() => new Float64Array(n));
+      const ok = new Uint8Array(n);
+      shiftColumns(pt.t, colArrs, outs, d, 0.5*pt.dt, false, ok);
+      for (let q = 0; q < n; q++){
+        if (!ok[q]) continue;
+        if (!(outs[0][q] === outs[0][q])) continue;       // primary yield unavailable
+        const r = Object.assign({}, rows[g[q]]);
+        for (let c = 0; c < cols.length; c++) r[cols[c]] = outs[c][q];
+        out[g[q]] = r;
+      }
+    }
+    const kept = out.filter(r => r !== undefined);
+    return { rows: kept, dropped: rows.length - kept.length, modes };
+  }
+
+  return { prepare, run, applyDelay, selectRasterSize, passTimes, fft2d, plan };
+})();
+
+if (typeof module !== "undefined") module.exports = { PCDI };
+
+</script>
+
+<script>
 /* ===== app.js ===== */
 /* ============================================================
    Yield Editor Pro — Web  |  app.js
@@ -1999,7 +2570,7 @@ if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid };
    ============================================================ */
 
 const FILTER_DEFS = [
-  ["DELAY","Grain flow delay","Shift yield N observations forward to correct for combine grain-flow lag. Also shifts the non-primary yield column and Moisture (if mapped) by the same N.","obs",0],
+  ["DELAY","Grain flow delay","Shift yield N observations forward to correct for combine grain-flow lag. Also shifts the non-primary yield column and Moisture (if mapped) by the same N. To detect the delay automatically and apply it in seconds before everything else, use the Flow Delay tab.","obs",0],
   ["START","Start pass delay","Drop the first N observations of every pass (header lowering).","obs",3],
   ["END","End pass delay","Drop the last N observations of every pass (header raising).","obs",3],
   ["STARTSEC","Start pass delay (sec)","Drop points within the first N seconds of every pass (header lowering), timed from the mapped Timestamp column. Independent of the observation-count version above — use whichever matches how you think about lag.","sec",null],
@@ -2049,6 +2620,11 @@ const S = {
   balanceFactors: {},
   geotiffExports: [], // log of {ts,attrs,cellSize,cols,rows}
   activeAttr: null,
+  delay: { enabled:false, seconds:0, rangeMin:-10, rangeMax:25, iterations:10, assumedDt:1, pixelSize:null, shiftMoisture:true },
+  delayResult: null,   // last PCDI analysis {res, meta} — not saved in sessions
+  delayApplied: null,  // {seconds, dropped, modes} from the last pipeline run, or null
+  snapshots: [],       // per-step {step,label,count,rows,vals} from the last pipeline run (for Raw | Clean)
+  compare: { on:false, step:"final", scale:null },
 };
 
 let map, boundaryLayer;
@@ -2652,6 +3228,9 @@ function buildMappingUI(){
 }
 function onMappingChanged(){
   syncPrimaryYieldControls();
+  S.compare.scale = null;
+  if (S.compare.on) renderRawPane();
+  updateDelayStatus();
   populateAttrSelect();
   populateGeotiffAttrList();
 }
@@ -2830,6 +3409,7 @@ function finishImport(){
   populateGeotiffAttrList();
   document.getElementById("sbRecords").textContent = S.rawRows.length.toLocaleString();
   document.getElementById("dotData").classList.add("on");
+  onNewDataset();
   recompute();
   fitMapToData();
   toast(`Loaded ${S.rawRows.length.toLocaleString()} records from ${S.sourceFilename}`);
@@ -2842,6 +3422,15 @@ function runPipeline({ trace=false } = {}){
   if (!S.rawRows.length) return { rows: [], trace: [] };
   const t = [];
   let rows = S.rawRows.map(r => Object.assign({}, r)); // fresh copy each run
+  // Per-step snapshots for the Raw | Clean view: the rows that survive each
+  // step plus the yield value they carry AT that step (balancing and Post-Cal
+  // overwrite yield_balanced in place, so values must be captured now).
+  const snaps = []; S.snapshots = snaps; S.delayApplied = null;
+  const snap = (step, label, rs, col) => {
+    const v = new Float32Array(rs.length);
+    for (let i = 0; i < rs.length; i++){ const x = parseFloat(rs[i][col]); v[i] = isFinite(x) ? x : NaN; }
+    snaps.push({ step, label, count: rs.length, rows: rs, vals: v });
+  };
   const { lon, lat, timestamp, velocity, machine, moisture, swath } = S.mapping;
 
   if (lon && lat){
@@ -2859,6 +3448,23 @@ function runPipeline({ trace=false } = {}){
   // may not even be the same kind of quantity as the primary's).
   const secondaryYieldCol = getSecondaryYieldCol();
 
+  // Step 0 of the Raw | Clean view: the data exactly as imported.
+  snap("IMPORT", "Imported (raw)", S.rawRows, yieldCol);
+
+  // Flow-delay correction (Flow Delay tab) — the very first processing step,
+  // ahead of balancing and every filter, so everything downstream sees yield
+  // that is already registered to the right position on the ground.
+  if (S.delay.enabled && +S.delay.seconds){
+    const dsec = +S.delay.seconds;
+    const cols = [yieldCol, secondaryYieldCol, S.delay.shiftMoisture ? moisture : null];
+    const res = PCDI.applyDelay(rows, { delay: dsec, cols, tsCol: timestamp, assumedDt: S.delay.assumedDt || 1 });
+    rows = res.rows;
+    S.delayApplied = { seconds: dsec, dropped: res.dropped, modes: res.modes, shiftedMoisture: !!(S.delay.shiftMoisture && moisture) };
+    const lbl = `Flow-delay correction (${dsec > 0 ? "+" : ""}${dsec} s)`;
+    t.push({ step:"FLOWDELAY", label: lbl, count: rows.length });
+    snap("FLOWDELAY", lbl, rows, yieldCol);
+  }
+
   // Balancing runs first — it corrects date/machine/moisture-meter
   // differences between combines before any filter (especially the
   // std-deviation-of-yield filter) sees the data. Balancing only ever
@@ -2873,6 +3479,7 @@ function runPipeline({ trace=false } = {}){
       workingYieldCol = "yield_balanced";
       S.balanceFactors.date = res.factors;
       t.push({ step:"BAL-DATE", label:"Date balancing applied", count: rows.length });
+      snap("BAL-DATE", "Date balancing", rows, "yield_balanced");
     }
   }
   if (S.balance.machineEnabled && S.balance.machineBase && machine){
@@ -2883,6 +3490,7 @@ function runPipeline({ trace=false } = {}){
       workingYieldCol = "yield_balanced";
       S.balanceFactors.machine = res.factors;
       t.push({ step:"BAL-MACHINE", label:"Machine balancing applied", count: rows.length });
+      snap("BAL-MACHINE", "Machine balancing", rows, "yield_balanced");
     }
   }
   if (S.balance.moistureEnabled && S.balance.moistureBase && machine && moisture){
@@ -2893,6 +3501,7 @@ function runPipeline({ trace=false } = {}){
       workingYieldCol = "yield_balanced";
       S.balanceFactors.moisture = res.factors;
       t.push({ step:"BAL-MOISTURE", label:"Moisture balancing applied", count: rows.length });
+      snap("BAL-MOISTURE", "Moisture balancing", rows, "yield_balanced");
     }
   }
 
@@ -2936,6 +3545,7 @@ function runPipeline({ trace=false } = {}){
     }
     rows = next;
     t.push({ step:code, label: FILTER_DEFS.find(x=>x[0]===code)[1], count: rows.length });
+    snap(code, FILTER_DEFS.find(x=>x[0]===code)[1], rows, workingYieldCol);
   }
 
   // Every row remaining at this point has survived the exact same
@@ -2980,6 +3590,7 @@ function runPipeline({ trace=false } = {}){
       workingYieldCol = "yield_balanced";
       S.postCalResult = res;
       t.push({ step:"POSTCAL", label:"Post-harvest calibration applied", count: rows.length });
+      snap("POSTCAL", "Post-harvest calibration", rows, "yield_balanced");
     }
   }
 
@@ -3014,6 +3625,8 @@ function recompute(){
   renderPoints();
   renderSummaryPreview();
   if (document.getElementById("manDrawHint")) updateManHint(manRemovedCount());
+  updateDelayUI();
+  updateCompareBar();
 }
 
 document.getElementById("btnApplyFilters").addEventListener("click", () => { readFiltersFromUI(); recompute(); });
@@ -3100,6 +3713,7 @@ function colorForRatio(t){
 
 function renderPoints(){
   if (pointLayer) map.removeLayer(pointLayer);
+  if (S.compare.on){ pointLayer = null; renderCleanPane(); return; }
   const { lon, lat } = S.mapping;
   const attr = S.activeAttr;
   if (!lon || !lat || !S.filteredRows.length){
@@ -3194,6 +3808,7 @@ document.getElementById("btnClearBoundary").addEventListener("click", () => {
   document.getElementById("sbBoundary").textContent = "none";
   document.getElementById("dotBoundary").classList.remove("on");
   updateGeotiffButton();
+  syncRawBoundary();
 });
 
 function setBoundary(geojson, filename){
@@ -3215,6 +3830,7 @@ function setBoundary(geojson, filename){
   document.getElementById("sbBoundary").textContent = filename;
   document.getElementById("dotBoundary").classList.add("on");
   updateGeotiffButton();
+  syncRawBoundary();
   toast("Boundary loaded: " + filename);
 }
 function updateGeotiffButton(){
@@ -3588,6 +4204,7 @@ function summaryMarkdown(){
   for (const [role,label] of ROLE_LIST) lines.push(`- ${label}: \`${S.mapping[role] || "—"}\``);
   lines.push(`- Primary yield for filtering/outlier detection: **${S.mapping.primaryYield === "wet" ? "Wet/Unprocessed" : "Dry/Processed"}**`);
   lines.push(``);
+  lines.push(...delaySummaryLines());
   lines.push(`## Filters applied`);
   if (!d.enabledFilters.length) lines.push(`- none`);
   for (const f of d.enabledFilters) lines.push(`- **${f.code}** — ${f.name}: ${f.detail}`);
@@ -3686,6 +4303,9 @@ ${ROLE_LIST.map(([role,label])=>`<tr><td>${label}</td><td><code>${escapeHtml(S.m
 <tr><th>Primary yield for filtering/outlier detection</th><td>${S.mapping.primaryYield === "wet" ? "Wet/Unprocessed" : "Dry/Processed"}</td></tr>
 </table>
 
+<h2>Flow delay (PCDI)</h2>
+<table>${delaySummaryRows().map(([k,v])=>`<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}</table>
+
 <h2>Filters applied</h2>
 <table><tr><th>Code</th><th>Description</th><th>Setting</th></tr>${filterRows}</table>
 
@@ -3746,13 +4366,14 @@ document.getElementById("btnSummaryHtml").addEventListener("click", () => {
    the desktop tool's .yesession convention)
    --------------------------------------------------------------- */
 document.getElementById("btnSaveSession").addEventListener("click", () => {
-  readFiltersFromUI(); readBalanceFromUI(); readPostCalFromUI();
+  readFiltersFromUI(); readBalanceFromUI(); readPostCalFromUI(); readDelayFromUI();
   syncFilterOrderFromDOM();
   const session = {
     kind:"yield-editor-pro-web-session", version:1,
     mapping:S.mapping, units:S.units, filters:S.filters, balance:S.balance, postCal:S.postCal,
     filterOrder:S.filterOrder, customFilterOrder:S.customFilterOrder,
     manPolygons:S.manPolygons, sourceFilename:S.sourceFilename,
+    delay:S.delay,
   };
   downloadBlob(JSON.stringify(session, null, 2), baseName()+".yesession.json", "application/json");
   toast("Session settings saved");
@@ -3769,6 +4390,8 @@ document.getElementById("loadSessionInput").addEventListener("change", async (e)
     if (session.filterOrder && session.filterOrder.length) S.filterOrder = session.filterOrder;
     if (typeof session.customFilterOrder === "boolean") S.customFilterOrder = session.customFilterOrder;
     if (session.manPolygons) S.manPolygons = session.manPolygons;
+    if (session.delay) Object.assign(S.delay, session.delay);
+    applyDelayToUI();
     buildFilterList();
     applyFiltersToUI();
     if (S.columns.length) buildMappingUI();
@@ -3797,10 +4420,531 @@ function applyFiltersToUI(){
   }
 }
 
+/* ===============================================================
+   Flow Delay tab (PCDI)  +  Raw | Clean side-by-side view
+   =============================================================== */
+const dlyEl = id => document.getElementById(id);
+const sgn = v => (v > 0 ? "+" : "") + v;
+let dlyCancel = false, dlyRunning = false;
+
+/* ---------- settings <-> UI ---------- */
+function readDelayFromUI(){
+  const num = (id, def) => { const v = parseFloat(dlyEl(id).value); return isFinite(v) ? v : def; };
+  const d = S.delay;
+  d.rangeMin = Math.round(num("dlyMin", -10));
+  d.rangeMax = Math.round(num("dlyMax", 25));
+  if (d.rangeMax < d.rangeMin){ const x = d.rangeMin; d.rangeMin = d.rangeMax; d.rangeMax = x; }
+  d.iterations = Math.max(1, Math.min(30, Math.round(num("dlyIters", 10))));
+  d.assumedDt = Math.max(0.05, num("dlyDt", 1));
+  const px = parseFloat(dlyEl("dlyPx").value);
+  d.pixelSize = (isFinite(px) && px > 0) ? px : null;
+  d.enabled = dlyEl("dlyEnabled").checked;
+  d.seconds = num("dlyApply", 0);
+  d.shiftMoisture = dlyEl("dlyShiftMoisture").checked;
+}
+function applyDelayToUI(){
+  const d = S.delay;
+  dlyEl("dlyMin").value = d.rangeMin;
+  dlyEl("dlyMax").value = d.rangeMax;
+  dlyEl("dlyIters").value = d.iterations;
+  dlyEl("dlyDt").value = d.assumedDt;
+  dlyEl("dlyPx").value = d.pixelSize || "";
+  dlyEl("dlyEnabled").checked = !!d.enabled;
+  dlyEl("dlyApply").value = d.seconds || 0;
+  dlyEl("dlyShiftMoisture").checked = d.shiftMoisture !== false;
+}
+
+function updateDelayStatus(){
+  const st = dlyEl("dlyStatus");
+  if (!st || S.delayResult || dlyRunning) return;
+  const ok = S.rawRows.length && S.mapping.lon && S.mapping.lat && getPrimaryYieldCol();
+  st.textContent = ok
+    ? `Ready: ${S.rawRows.length.toLocaleString()} raw records. Press Analyze to find the delay.`
+    : "Import data and map Longitude, Latitude and a yield column first.";
+}
+
+function updateDelayUI(){
+  const h = dlyEl("dlyApplyHint");
+  if (!h) return;
+  const parts = [];
+  const sec = +S.delay.seconds;
+  if (S.delay.enabled && sec){
+    if (S.delayApplied){
+      parts.push(`Applied ${sgn(S.delayApplied.seconds)} s as step 1 — ${S.delayApplied.dropped.toLocaleString()} record(s) at pass ends had no matching reading and were dropped.`);
+    }
+    if (S.filters.DELAY.enabled && S.filters.DELAY.val){
+      parts.push(`<span class="warn-text">⚠ The Grain flow delay filter is also enabled on the Filters tab, so the shift is being applied twice. Turn one of them off.</span>`);
+    }
+  } else if (S.delay.enabled){
+    parts.push("Enabled, but the delay is 0 s — nothing to apply.");
+  } else {
+    parts.push("Not applied — processing starts from the data exactly as imported.");
+  }
+  h.innerHTML = parts.join("<br>");
+}
+
+function onNewDataset(){
+  S.delayResult = null;
+  S.compare.scale = null;
+  S.compare.step = "final";
+  dlyEl("dlyResultSection").style.display = "none";
+  dlyEl("btnDelayUseRec").disabled = true;
+  dlyEl("btnDelayUseRec").textContent = "Use recommended";
+  updateDelayStatus();
+  if (S.compare.on) renderRawPane();
+}
+
+/* ---------- analysis ---------- */
+function medianSwathMeters(){
+  const col = S.mapping.swath;
+  if (!col) return null;
+  const vals = [];
+  const step = Math.max(1, Math.floor(S.rawRows.length / 5000));
+  for (let i = 0; i < S.rawRows.length; i += step){
+    const ft = unitToFeet(parseFloat(S.rawRows[i][col]), S.units.swath);
+    if (isFinite(ft) && ft > 0) vals.push(ft * 0.3048);
+  }
+  if (!vals.length) return null;
+  vals.sort((a, b) => a - b);
+  const m = vals[vals.length >> 1];
+  return (m >= 1 && m <= 40) ? m : null;   // ignore implausible swath values (wrong unit / bad column)
+}
+
+function setDelayRunningUI(running){
+  dlyEl("btnDelayAnalyze").disabled = running;
+  dlyEl("btnDelayCancel").style.display = running ? "" : "none";
+  dlyEl("dlyProgress").style.display = running ? "block" : "none";
+  if (!running) dlyEl("dlyProgressBar").style.width = "0%";
+}
+
+async function runDelayAnalysis(){
+  if (dlyRunning) return;
+  const yieldCol = getPrimaryYieldCol();
+  const { lon, lat, timestamp, velocity, machine } = S.mapping;
+  if (!S.rawRows.length || !lon || !lat || !yieldCol){
+    toast("Import data and map Longitude, Latitude and a yield column first.", true);
+    return;
+  }
+  readDelayFromUI();
+  const D = S.delay;
+  if (D.rangeMax - D.rangeMin > 80){
+    D.rangeMax = D.rangeMin + 80; dlyEl("dlyMax").value = D.rangeMax;
+    toast("Search range limited to 80 s.");
+  }
+  dlyRunning = true; dlyCancel = false;
+  setDelayRunningUI(true);
+  const st = dlyEl("dlyStatus");
+  st.textContent = "Preparing raw data…";
+  try{
+    await new Promise(r => setTimeout(r, 30));          // let the UI paint first
+    // Work on slim copies of the RAW rows (nothing cleaned, balanced or filtered).
+    const keys = [...new Set([lon, lat, timestamp, velocity, machine, yieldCol].filter(Boolean))];
+    const slim = S.rawRows.map(r => { const o = {}; for (const k of keys) o[k] = r[k]; return o; });
+    computeTransects(slim, lon, lat, timestamp, velocity, machine);
+    const prep = PCDI.prepare(slim, { lonCol:lon, latCol:lat, tsCol:timestamp, yieldCol, assumedDt:D.assumedDt });
+    if (prep.nValid < 200) throw new Error("Fewer than 200 usable points (valid position and yield) — not enough to analyse.");
+    if (prep.nPasses < 3) throw new Error("Fewer than 3 passes were detected — the method compares neighbouring passes.");
+
+    const swathM = medianSwathMeters();
+    let pxSize = D.pixelSize, basis;
+    if (pxSize) basis = "pixel size entered";
+    else if (swathM){ pxSize = 0.7 * swathM; basis = `0.7 × median swath (${fmtNum(swathM, 1)} m)`; }
+    else basis = "paper's valid/coupled pixel-ratio rule";
+
+    const machines = machine ? new Set(S.rawRows.map(r => r[machine])).size : 0;
+    const polygon = !!(S.rawRows[0] && S.rawRows[0].__poly__);
+    const t0 = performance.now();
+    const res = await PCDI.run(
+      prep,
+      { rangeMin:D.rangeMin, rangeMax:D.rangeMax, iterations:D.iterations, pixelSize:pxSize, maxN:1024 },
+      (f, msg) => {
+        dlyEl("dlyProgressBar").style.width = Math.round(f*100) + "%";
+        st.textContent = `Analysing… ${Math.round(f*100)}% (${msg})`;
+      },
+      () => dlyCancel
+    );
+    if (!res){ st.textContent = "Cancelled."; return; }
+    const meta = {
+      n: prep.nValid, passes: prep.nPasses, dt: prep.dtMedian, modes: prep.modes, nTotal: prep.n,
+      basis, swathM, machines, polygon, rangeMin: D.rangeMin, rangeMax: D.rangeMax,
+      seconds: (performance.now() - t0) / 1000, yieldCol,
+    };
+    S.delayResult = { res, meta };
+    showDelayResult();
+  } catch(err){
+    console.error(err);
+    st.textContent = "Analysis failed: " + err.message;
+    toast("Delay analysis failed: " + err.message, true);
+  } finally {
+    dlyRunning = false;
+    setDelayRunningUI(false);
+  }
+}
+
+function assessDelay(res, meta){
+  const w = [];
+  let level = "High";
+  const order = { High:0, Medium:1, Low:2 };
+  const bump = to => { if (order[to] > order[level]) level = to; };
+  if (res.sd > 3){
+    bump("Low");
+    w.push({ bad:true, text:`The ${res.iterations} noise-field answers disagree (SD ${fmtNum(res.sd,1)} s > 3 s) — the paper treats this as a questionable estimate.` });
+  } else if (res.sd > 1){
+    bump("Medium");
+    w.push({ text:`The noise-field answers vary somewhat (SD ${fmtNum(res.sd,1)} s); treat the result as ±${Math.max(1, Math.round(res.sd))} s.` });
+  }
+  if (res.atEdge){
+    bump("Low");
+    w.push({ bad:true, text:"The peak sits at the edge of the search range — widen the range and run again." });
+  }
+  if (res.contrast < 0.0015){
+    bump("Low");
+    w.push({ bad:true, text:"The RSC curve is almost flat: little usable pass-to-pass structure (low yield variability, or a very small field)." });
+  } else if (res.contrast < 0.004){
+    bump("Medium");
+    w.push({ text:"The RSC peak is weak relative to the rest of the curve." });
+  }
+  if (meta.n < 5000){
+    bump("Medium");
+    w.push({ text:`Only ${meta.n.toLocaleString()} usable points — small datasets produced most of the unreliable estimates in the paper's testing.` });
+  }
+  if (meta.modes.assumed > 0.5 * meta.nTotal){
+    w.push({ text:`No usable timestamps for most passes — assumed ${fmtNum(S.delay.assumedDt, 2)} s between observations, so the delay in seconds depends on that value.` });
+  }
+  if (meta.machines > 1){
+    w.push({ text:`${meta.machines} machines in this file. One delay is estimated across all of them; if their combines differ, analyse them separately.` });
+  }
+  if (meta.polygon){
+    w.push({ bad:true, text:"Polygon input detected. Delay detection assumes sequential point logs from a yield monitor; results are unreliable for cell polygons." });
+  }
+  if (meta.swathM){
+    const f = res.pixelSize / meta.swathM;
+    if (f < 0.4 || f > 1.1) w.push({ text:`Pixel size is ${Math.round(f*100)}% of the swath; the method works best at about 50–85%.` });
+  }
+  return { level, warnings: w };
+}
+
+function showDelayResult(){
+  const R = S.delayResult; if (!R) return;
+  const { res, meta } = R;
+  const a = assessDelay(res, meta);
+  R.conf = a.level;
+  const obs = Math.round(res.best / meta.dt);
+  dlyEl("dlyResultSection").style.display = "block";
+  dlyEl("dlyBest").textContent = `${sgn(res.best)} s`;
+  const cls = a.level === "High" ? "conf-high" : (a.level === "Medium" ? "conf-med" : "conf-low");
+  dlyEl("dlyBestSub").innerHTML =
+    `recommended delay · ≈ ${sgn(obs)} observation${Math.abs(obs) === 1 ? "" : "s"} at ${fmtNum(meta.dt, 2)} s logging ` +
+    `<span class="badge ${cls}">${a.level} confidence</span>`;
+  const rows = [
+    ["Spread (SD)", `${fmtNum(res.sd, 1)} s · ${res.iterations} fields`],
+    ["Peak RSC", fmtNum(res.mean[res.bestIndex], 4)],
+    ["Raster", `${res.N}×${res.N} @ ${fmtNum(res.pixelSize, 1)} m`],
+    ["Pixel basis", meta.basis],
+    ["Points / passes", `${meta.n.toLocaleString()} / ${meta.passes.toLocaleString()}`],
+    ["Time base", meta.modes.timestamp >= meta.modes.regularized && meta.modes.timestamp >= meta.modes.assumed ? "timestamps"
+                  : (meta.modes.regularized >= meta.modes.assumed ? "timestamps (spread evenly)" : "assumed interval")],
+    ["Search range", `${meta.rangeMin} … ${meta.rangeMax} s`],
+    ["Run time", `${fmtNum(meta.seconds, 1)} s`],
+  ];
+  dlyEl("dlyStats").innerHTML = rows.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join("");
+  dlyEl("dlyWarnings").innerHTML = a.warnings.map(w => `<li class="${w.bad ? "bad" : ""}">${w.text}</li>`).join("");
+  dlyEl("dlyStatus").textContent = `Done in ${fmtNum(meta.seconds, 1)} s — analysed the data exactly as imported (no cleaning applied).`;
+  const useBtn = dlyEl("btnDelayUseRec");
+  useBtn.disabled = false;
+  useBtn.textContent = `Use recommended (${sgn(res.best)} s)`;
+  if (!S.delay.enabled) dlyEl("dlyApply").value = res.best;   // pre-fill, but don't enable on the user's behalf
+  drawDelayChart();
+}
+
+function drawDelayChart(){
+  const cv = dlyEl("dlyChart"), R = S.delayResult;
+  if (!cv || !R || !cv.clientWidth) return;
+  const css = getComputedStyle(document.body);
+  const c = n => (css.getPropertyValue(n).trim() || "#888");
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = 170;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const { delays, mean, lo, hi, bestIndex } = R.res;
+  const pad = { l:46, r:10, t:12, b:26 };
+  const x0 = delays[0], x1 = delays[delays.length - 1] > x0 ? delays[delays.length - 1] : x0 + 1;
+  let ymin = Math.min(...lo), ymax = Math.max(...hi);
+  if (ymax - ymin < 1e-9) ymax = ymin + 1e-6;
+  const yp = (ymax - ymin) * 0.1; ymin -= yp; ymax += yp;
+  const X = d => pad.l + (d - x0) / (x1 - x0) * (W - pad.l - pad.r);
+  const Y = v => pad.t + (1 - (v - ymin) / (ymax - ymin)) * (H - pad.t - pad.b);
+  g.font = "10px " + (css.getPropertyValue("--mono").trim() || "monospace");
+  g.lineWidth = 1;
+
+  // grid + y labels
+  g.fillStyle = c("--muted"); g.strokeStyle = c("--line"); g.textAlign = "right"; g.textBaseline = "middle";
+  for (let i = 0; i <= 3; i++){
+    const v = ymin + (ymax - ymin) * i / 3, y = Y(v);
+    g.beginPath(); g.moveTo(pad.l, y); g.lineTo(W - pad.r, y); g.stroke();
+    g.fillText(v.toFixed(4), pad.l - 5, y);
+  }
+  // x ticks
+  const span = x1 - x0, step = span <= 30 ? 5 : (span <= 60 ? 10 : 20);
+  g.textAlign = "center"; g.textBaseline = "top";
+  for (let d = Math.ceil(x0 / step) * step; d <= x1; d += step){
+    const x = X(d);
+    g.strokeStyle = d === 0 ? c("--muted2") : c("--line");
+    g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, H - pad.b); g.stroke();
+    g.fillStyle = c("--muted"); g.fillText(String(d), x, H - pad.b + 5);
+  }
+  g.textAlign = "right"; g.fillText("delay (s)", W - pad.r, H - 11);
+
+  // min–max band
+  g.beginPath();
+  delays.forEach((d, i) => { const x = X(d), y = Y(hi[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  for (let i = delays.length - 1; i >= 0; i--) g.lineTo(X(delays[i]), Y(lo[i]));
+  g.closePath(); g.globalAlpha = 0.22; g.fillStyle = c("--accent"); g.fill(); g.globalAlpha = 1;
+
+  // applied delay marker
+  if (S.delayApplied && S.delayApplied.seconds >= x0 && S.delayApplied.seconds <= x1){
+    const x = X(S.delayApplied.seconds);
+    g.save(); g.setLineDash([4, 3]); g.strokeStyle = c("--gold"); g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, H - pad.b); g.stroke(); g.restore();
+  }
+  // mean curve
+  g.strokeStyle = c("--accent2"); g.lineWidth = 1.8; g.beginPath();
+  delays.forEach((d, i) => { const x = X(d), y = Y(mean[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.stroke();
+  // peak
+  const px = X(delays[bestIndex]), py = Y(mean[bestIndex]);
+  g.fillStyle = c("--gold"); g.beginPath(); g.arc(px, py, 4, 0, Math.PI * 2); g.fill();
+  g.fillStyle = c("--text"); g.textBaseline = "bottom";
+  g.textAlign = px > W * 0.75 ? "right" : (px < W * 0.25 ? "left" : "center");
+  g.fillText(sgn(delays[bestIndex]) + " s", px, Math.max(py - 7, 12));
+}
+
+/* ---------- summary text ---------- */
+function delaySummaryRows(){
+  const rows = [];
+  const R = S.delayResult;
+  if (R){
+    const r = R.res, m = R.meta;
+    rows.push(["Analysis (raw data, before any cleaning)",
+      `recommended ${sgn(r.best)} s (≈ ${sgn(Math.round(r.best / m.dt))} obs), confidence ${R.conf}; spread ${fmtNum(r.sd, 1)} s over ${r.iterations} noise fields`]);
+    rows.push(["Raster", `${r.N}×${r.N} at ${fmtNum(r.pixelSize, 1)} m pixels (${m.basis}); search range ${m.rangeMin} to ${m.rangeMax} s`]);
+  } else {
+    rows.push(["Analysis", "not run this session"]);
+  }
+  if (S.delay.enabled && +S.delay.seconds && S.delayApplied){
+    rows.push(["Correction", `${sgn(S.delayApplied.seconds)} s applied as the first pipeline step; ${S.delayApplied.dropped.toLocaleString()} record(s) at pass ends dropped${S.delayApplied.shiftedMoisture ? "; moisture shifted too" : ""}`]);
+  } else {
+    rows.push(["Correction", "not applied"]);
+  }
+  return rows;
+}
+function delaySummaryLines(){
+  const out = ["## Flow delay (PCDI)"];
+  for (const [k, v] of delaySummaryRows()) out.push(`- ${k}: ${v}`);
+  out.push("");
+  return out;
+}
+
+/* ===============================================================
+   Raw | Clean side-by-side
+   =============================================================== */
+let mapRaw = null, rawLayer = null, rawBase = null, rawBoundaryLayer = null, cmpSyncing = false;
+
+function setRawBasemap(key){
+  if (!mapRaw) return;
+  if (rawBase){ mapRaw.removeLayer(rawBase); rawBase = null; }
+  const def = BASEMAPS[key];
+  if (!def || (!def.url && !def.layers)) return;
+  rawBase = def.layers
+    ? L.layerGroup(def.layers.map(l => L.tileLayer(l.url, l.opts))).addTo(mapRaw)
+    : L.tileLayer(def.url, def.opts).addTo(mapRaw);
+  if (rawBase.bringToBack) rawBase.bringToBack();
+}
+
+function initRawMap(){
+  if (mapRaw) return;
+  mapRaw = L.map("mapRaw", { preferCanvas:true, zoomControl:false }).setView(map.getCenter(), map.getZoom());
+  setRawBasemap(dlyEl("basemapSelect").value);
+  const link = (a, b) => a.on("move", () => {
+    if (cmpSyncing || !S.compare.on) return;
+    cmpSyncing = true;
+    try{ b.setView(a.getCenter(), a.getZoom(), { animate:false }); } finally { cmpSyncing = false; }
+  });
+  link(map, mapRaw); link(mapRaw, map);
+}
+
+function syncRawBoundary(){
+  if (!mapRaw) return;
+  if (rawBoundaryLayer){ mapRaw.removeLayer(rawBoundaryLayer); rawBoundaryLayer = null; }
+  if (S.boundary && S.compare.on){
+    rawBoundaryLayer = L.geoJSON(S.boundary, {
+      style:{ color:"#d3a23a", weight:2, fillColor:"#d3a23a", fillOpacity:0.06 }, interactive:false,
+    }).addTo(mapRaw);
+  }
+}
+
+// One colour scale for BOTH panes: the raw data's 2nd–98th percentile, so a
+// colour change between the panes is a real change in value, not a re-stretch.
+function ensureCompareScale(){
+  if (S.compare.scale) return S.compare.scale;
+  const col = getPrimaryYieldCol();
+  const vals = [];
+  if (col) for (const r of S.rawRows){ const v = parseFloat(r[col]); if (isFinite(v)) vals.push(v); }
+  const sorted = Float64Array.from(vals).sort();
+  let lo = 0, hi = 1;
+  if (sorted.length){
+    lo = sorted[Math.floor(sorted.length * 0.02)];
+    hi = sorted[Math.ceil(sorted.length * 0.98) - 1] ?? sorted[sorted.length - 1];
+    if (hi <= lo) hi = lo + 1;
+  }
+  return (S.compare.scale = { lo, hi, col });
+}
+
+function valStats(vals){
+  let n = 0, s = 0, s2 = 0;
+  for (let i = 0; i < vals.length; i++){ const v = vals[i]; if (v === v && isFinite(v)){ n++; s += v; s2 += v*v; } }
+  if (!n) return null;
+  const m = s / n;
+  return { n, mean: m, sd: Math.sqrt(Math.max(0, s2/n - m*m)) };
+}
+function statsText(st){
+  return st ? `${st.n.toLocaleString()} pts · mean ${fmtNum(st.mean, 2)} · SD ${fmtNum(st.sd, 2)}` : "no data";
+}
+
+function drawYieldLayer(rows, vals, sc, target){
+  const { lon, lat } = S.mapping;
+  const layers = [];
+  const cap = 40000, step = Math.max(1, Math.floor(rows.length / cap));
+  for (let i = 0; i < rows.length; i += step){
+    const r = rows[i], v = vals[i];
+    const t = (v === v && isFinite(v)) ? Math.max(0, Math.min(1, (v - sc.lo) / (sc.hi - sc.lo))) : null;
+    const color = t !== null ? colorForRatio(t) : "#93b23f";
+    let m;
+    if (r.__poly__ && r.__poly__.length){
+      const latlngs = r.__poly__.map(ring => ring.map(([x, y]) => [y, x]));
+      m = L.polygon(latlngs, { color:"#00000030", weight:0.5, fillColor:color, fillOpacity:0.88 });
+    } else {
+      const la = parseFloat(r[lat]), lo_ = parseFloat(r[lon]);
+      if (!isFinite(la) || !isFinite(lo_)) continue;
+      m = L.circleMarker([la, lo_], { radius:3, color, fillColor:color, fillOpacity:0.85, weight:0, opacity:0.9 });
+    }
+    m.bindPopup(() => {
+      const parts = [`<b>yield</b>: ${fmtNum(v, 2)}`];
+      if (lat && lon) parts.push(`lat/lon: ${fmtNum(r[lat], 5)}, ${fmtNum(r[lon], 5)}`);
+      if (S.mapping.timestamp && r[S.mapping.timestamp]) parts.push(`time: ${r[S.mapping.timestamp]}`);
+      return parts.join("<br>");
+    });
+    layers.push(m);
+  }
+  return L.layerGroup(layers).addTo(target);
+}
+
+function renderRawPane(){
+  if (!mapRaw || !S.compare.on) return;
+  if (rawLayer){ mapRaw.removeLayer(rawLayer); rawLayer = null; }
+  const col = getPrimaryYieldCol();
+  const { lon, lat } = S.mapping;
+  if (!col || !lon || !lat || !S.rawRows.length){ dlyEl("cmpRawStats").textContent = "no data"; return; }
+  const vals = new Float32Array(S.rawRows.length);
+  for (let i = 0; i < vals.length; i++){ const v = parseFloat(S.rawRows[i][col]); vals[i] = isFinite(v) ? v : NaN; }
+  rawLayer = drawYieldLayer(S.rawRows, vals, ensureCompareScale(), mapRaw);
+  dlyEl("cmpRawStats").textContent = statsText(valStats(vals));
+}
+
+function renderCleanPane(){
+  const { lon, lat } = S.mapping;
+  const snaps = S.snapshots || [];
+  const snap = !snaps.length ? null
+    : (S.compare.step === "final" ? snaps[snaps.length - 1] : (snaps.find(s => s.step === S.compare.step) || snaps[snaps.length - 1]));
+  const sc = ensureCompareScale();
+  dlyEl("legendTitle").textContent = "Yield · shared scale";
+  dlyEl("legendMin").textContent = fmtNum(sc.lo);
+  dlyEl("legendMax").textContent = fmtNum(sc.hi);
+  if (!snap || !lon || !lat){ dlyEl("cmpCleanStats").textContent = "no data"; return; }
+  pointLayer = drawYieldLayer(snap.rows, snap.vals, sc, map);
+  setPointsInteractive(!drawMode);
+  if (selectionLayer) selectionLayer.bringToFront();
+  dlyEl("cmpCleanStats").textContent = statsText(valStats(snap.vals));
+}
+
+function updateCompareBar(){
+  const sel = dlyEl("cmpStepSel");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const fin = document.createElement("option");
+  fin.value = "final"; fin.textContent = "Final result";
+  sel.appendChild(fin);
+  (S.snapshots || []).forEach((s, i) => {
+    const o = document.createElement("option");
+    o.value = s.step; o.textContent = `${i}. ${s.label} (${s.count.toLocaleString()})`;
+    sel.appendChild(o);
+  });
+  if (S.compare.step !== "final" && !(S.snapshots || []).some(s => s.step === S.compare.step)) S.compare.step = "final";
+  sel.value = S.compare.step;
+}
+
+function toggleCompare(on){
+  S.compare.on = on;
+  dlyEl("mapwrap").classList.toggle("compare", on);
+  dlyEl("btnCompare").classList.toggle("active", on);
+  if (on) initRawMap();
+  setTimeout(() => {
+    map.invalidateSize();
+    if (on){
+      mapRaw.invalidateSize();
+      mapRaw.setView(map.getCenter(), map.getZoom(), { animate:false });
+      renderRawPane();
+      syncRawBoundary();
+    } else {
+      syncRawBoundary();
+    }
+    renderPoints();
+    if (isMobileViewport() && on) setSidebarClosed(true);   // give the two panes the whole screen
+  }, 30);
+}
+
+/* ---------- wiring ---------- */
+function initCompareAndDelay(){
+  applyDelayToUI();
+  updateDelayUI();
+  updateCompareBar();
+  dlyEl("btnDelayAnalyze").addEventListener("click", runDelayAnalysis);
+  dlyEl("btnDelayCancel").addEventListener("click", () => { dlyCancel = true; });
+  const applyNow = () => {
+    readDelayFromUI();
+    if (!S.rawRows.length){ toast("Import data first.", true); return; }
+    recompute();
+    drawDelayChart();
+    if (S.delayApplied) toast(`Flow-delay correction applied: ${sgn(S.delayApplied.seconds)} s`);
+    else if (!S.delay.enabled) toast("Flow-delay correction is off — processing starts from the imported data.");
+  };
+  dlyEl("btnDelayApply").addEventListener("click", applyNow);
+  dlyEl("btnDelayUseRec").addEventListener("click", () => {
+    if (!S.delayResult) return;
+    dlyEl("dlyApply").value = S.delayResult.res.best;
+    dlyEl("dlyEnabled").checked = true;
+    applyNow();
+  });
+  dlyEl("btnCompare").addEventListener("click", () => toggleCompare(!S.compare.on));
+  dlyEl("cmpStepSel").addEventListener("change", e => {
+    S.compare.step = e.target.value;
+    renderPoints();
+  });
+  dlyEl("basemapSelect").addEventListener("change", () => setRawBasemap(dlyEl("basemapSelect").value));
+  dlyEl("themeToggle").addEventListener("click", () => setTimeout(drawDelayChart, 0));
+  window.addEventListener("resize", () => { drawDelayChart(); if (S.compare.on){ map.invalidateSize(); if (mapRaw) mapRaw.invalidateSize(); } });
+  if (window.ResizeObserver){
+    new ResizeObserver(() => { map.invalidateSize(); if (mapRaw && S.compare.on) mapRaw.invalidateSize(); }).observe(dlyEl("mapwrap"));
+  }
+  document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => { if (b.dataset.tab === "delay") setTimeout(drawDelayChart, 0); }));
+}
+
 /* ---------------------------------------------------------------
    Boot
    --------------------------------------------------------------- */
 initMap();
+initCompareAndDelay();
 
 </script>
 
