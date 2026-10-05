@@ -55,6 +55,17 @@ h1,h2,h3{font-family:var(--sans); font-weight:600; letter-spacing:.01em; margin:
 button, select, input{font-family:var(--sans); font-size:12.5px;}
 ::selection{background:var(--accent); color:#0c0e08;}
 
+/* ---------- shapefile metadata callout + prompt ---------- */
+.callout{border:1px solid var(--line); border-left:3px solid var(--gold); background:var(--panel2); padding:8px 10px; margin-top:8px; font-size:11.5px; line-height:1.5; color:var(--text);}
+.callout b.t{display:block; color:var(--gold); margin-bottom:3px;}
+.callout .meta-status{margin-top:6px; color:var(--accent2); font-weight:600;}
+.ymodal-back{position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10000; display:flex; align-items:center; justify-content:center; padding:16px;}
+.ymodal{background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--gold); border-radius:var(--radius); max-width:480px; width:100%; padding:16px 18px; box-shadow:0 10px 40px rgba(0,0,0,.5);}
+.ymodal h3{margin-bottom:8px;}
+.ymodal p{margin:0 0 8px; line-height:1.5;}
+.ymodal ul{margin:0 0 10px; padding-left:18px; font-family:var(--mono); font-size:11.5px; word-break:break-all;}
+.ymodal .btn-row{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:12px;}
+
 /* ---------- top bar ---------- */
 #topbar{
   display:flex; align-items:center; gap:14px; padding:9px 16px;
@@ -394,8 +405,8 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
             <input type="file" id="fileGeojson" accept=".geojson,.json">
           </div>
           <div class="field">
-            <label>ESRI Shapefile — points or polygons (.zip, or select the unzipped .shp + .dbf + .shx + .prj together)</label>
-            <input type="file" id="fileShapefile" accept=".zip,.shp,.dbf,.shx,.prj" multiple>
+            <label>ESRI Shapefile — points or polygons (.zip, or select the unzipped .shp + .dbf + .shx + .prj together — include any .json metadata file so it can be carried into the export)</label>
+            <input type="file" id="fileShapefile" accept=".zip,.shp,.dbf,.shx,.prj,.cpg,.json" multiple>
           </div>
           <div class="hint">Column roles are auto-detected from common monitor naming (JD Ops Center, FieldView, AgLeader/SMS, generic). Review under <b>Column Mapping</b> below. Polygon inputs — as-harvested yield-cell files, zone/management-area files — import one row per polygon; the real footprint is kept for the map and for GeoJSON/Shapefile export, while filtering, balancing, and GeoTIFF interpolation use each polygon's centroid.</div>
         </div>
@@ -622,6 +633,11 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
             <button class="btn" id="btnExportAgLeader">AgLeader Text</button>
           </div>
           <div class="hint">Exports use the current filtered/balanced dataset. Balanced yield exports under <code>yield_balanced</code> when balancing is enabled.</div>
+          <div class="callout">
+            <b class="t">Shapefile export &amp; FMIS metadata</b>
+            The Shapefile .zip contains <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, <code>.prj</code> and <code>.cpg</code>. If the original source shapefile came with a <code>.json</code> metadata file (e.g. John Deere's <code>-Metadata.json</code>), FMIS software needs a copy sitting in the same folder as the cleaned data, <b>renamed to match the new file</b>, before it will still recognise the export as valid yield data. If that file was imported with your shapefile, you'll be prompted on export to add it to the .zip already renamed. Otherwise, copy it into the folder yourself and rename it to match.
+            <div class="meta-status" id="shpMetaStatus" style="display:none;"></div>
+          </div>
         </div>
         <div class="section">
           <h3>GeoTIFF raster (clipped to boundary)</h3>
@@ -735,6 +751,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
         <div class="section help-block">
           <h3>Export &amp; Summary</h3>
           <p>CSV, GeoJSON, and Shapefile exports respect the <b>Column set</b> choice at the top of the Export tab. <b>Full</b> (the previous default behaviour) includes every original column plus whichever cleaned columns exist — wherever balancing or Post-Cal produced a <code>yield_balanced</code> column, and wherever <code>yield_dry_clean</code>/<code>yield_wet_clean</code>/<code>moisture_clean</code> exist, they're included alongside the original columns. <b>Streamlined</b> exports the source file's own columns — same names, same order — with the cleaned wet/dry/moisture values written in place of the raw ones, and adds no <code>_clean</code>-suffixed or <code>yield_balanced</code> columns. Use it when another FMIS platform needs to recognise the file as a normal yield export. <b>Simplified</b> exports only the cleaned wet/dry/moisture values under their <i>original</i> column names (plus position in GeoJSON/Shapefile geometry) and drops every other source column, giving the smallest file; it will not be recognised by platforms that require the full original column set. AgLeader Text export always uses its own fixed field schema regardless of this setting, and prefers an actual mapped Wet/Unprocessed Yield value for its Grain_Flow_lbs_sec field over back-calculating one from the per-acre Dry figure, when one is available. The Summary tab captures the source file, column mapping (including which yield column is primary), every pipeline stage's record count, all balancing and calibration factors, boundary status, and any GeoTIFF exports made in the session (including which interpolation method each used) — downloadable as Markdown or a standalone HTML file.</p>
+          <p><b>Shapefile metadata.</b> Shapefile exports include <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, <code>.prj</code> and <code>.cpg</code>. Some FMIS platforms only accept a yield shapefile if its <code>.json</code> metadata file (such as John Deere's <code>-Metadata.json</code>) travels with it under a matching name. When a .json file came in with your source shapefile (inside the .zip, or selected alongside loose files), the Shapefile export asks whether to copy it into the export .zip and renames it to the new base name, keeping any suffix such as <code>-Metadata</code>. The file's contents are copied unchanged. If the source had no metadata file selected, or the export is for a different source type, copy and rename it manually.</p>
         </div>
 
         <div class="section help-block">
@@ -1636,7 +1653,7 @@ if (typeof module !== "undefined") module.exports = { writeGeoTIFF };
 /* ============================================================
    Minimal ESRI Shapefile writer (Point shapefiles only) —
    ported from the desktop tool's _pack_dbf / _pack_shp_shx.
-   Produces .shp, .shx, .dbf, .prj byte arrays + a name_map for
+   Produces .shp, .shx, .dbf, .prj, .cpg byte arrays + a name_map for
    any DBF field names that were truncated/renamed.
    ============================================================ */
 
@@ -1893,6 +1910,10 @@ const PRJ_WGS84 =
   'PRIMEM["Greenwich",0.0],' +
   'UNIT["Degree",0.0174532925199433]]';
 
+// Text in the .dbf is written one byte per character (strToBytes), so the
+// .cpg sidecar declares that single-byte encoding. Identical to UTF-8 for ASCII.
+const DBF_CODEPAGE = "ISO-8859-1";
+
 function concatBytes(arrs){
   let len = 0; for (const a of arrs) len += a.length;
   const out = new Uint8Array(len);
@@ -1901,7 +1922,7 @@ function concatBytes(arrs){
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { packDBF, packShpShx, packShpShxPolygon, PRJ_WGS84, detectFieldType };
+  module.exports = { packDBF, packShpShx, packShpShxPolygon, PRJ_WGS84, DBF_CODEPAGE, detectFieldType };
 }
 
 </script>
@@ -3368,8 +3389,9 @@ function pickShpLayer(gj){
    --------------------------------------------------------------- */
 async function readShapefileFiles(files){
   if (typeof shp !== "function") throw new Error("Shapefile reader failed to load — check your network connection and reload.");
-  if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip")){
-    const raw = await shp(await files[0].arrayBuffer());
+  const zipSel = files.find(f => f.name.toLowerCase().endsWith(".zip"));
+  if (zipSel && !files.some(f => f.name.toLowerCase().endsWith(".shp"))){
+    const raw = await shp(await zipSel.arrayBuffer());
     const { layer, extraCount } = pickShpLayer(raw);
     if (!layer) throw new Error("No readable shapefile layer found in this .zip (check that it contains a .shp + .dbf pair).");
     if (extraCount) toast(`This .zip contained ${extraCount + 1} candidate layers — used the largest (${layer.features.length.toLocaleString()} features).`);
@@ -3388,17 +3410,90 @@ async function readShapefileFiles(files){
   return { type:"FeatureCollection", features: geom.map(g => ({ type:"Feature", geometry:g, properties:{} })) };
 }
 
+/* Finds .json metadata sidecars that came with a source shapefile — inside a
+   .zip or selected alongside loose files — so the export can carry them along. */
+async function collectShapefileMetadata(files){
+  const found = [];
+  const zipFile = files.find(f => /\.zip$/i.test(f.name));
+  if (zipFile && typeof JSZip !== "undefined"){
+    try{
+      const z = await JSZip.loadAsync(await zipFile.arrayBuffer());
+      const shpBases = [], jsons = [];
+      z.forEach((path, entry) => {
+        if (entry.dir || /(^|\/)__MACOSX\//.test(path)) return;
+        const name = path.split("/").pop();
+        if (name.startsWith("._")) return;
+        if (/\.shp$/i.test(name)) shpBases.push(name.replace(/\.shp$/i, ""));
+        else if (/\.json$/i.test(name)) jsons.push({ name, entry });
+      });
+      for (const j of jsons) found.push({ name:j.name, data: await j.entry.async("uint8array"), shpBases });
+    } catch(err){ console.warn("Could not scan .zip for metadata:", err); }
+  }
+  const looseBases = files.filter(f => /\.shp$/i.test(f.name)).map(f => f.name.replace(/\.shp$/i, ""));
+  for (const f of files){
+    if (/\.json$/i.test(f.name)) found.push({ name:f.name, data:new Uint8Array(await f.arrayBuffer()), shpBases:looseBases });
+  }
+  return found;
+}
+
+/* New file name for a metadata sidecar: swap the source shapefile's base name
+   for the export's base name, keeping whatever follows it ("-Metadata.json", ".json"). */
+function metaTargetName(srcName, shpBases, newBase){
+  const bases = [...shpBases].sort((a,b) => b.length - a.length);
+  for (const b of bases){
+    if (b && srcName.toLowerCase().startsWith(b.toLowerCase())){
+      const rest = srcName.slice(b.length);
+      if (/\.json$/i.test(rest)) return newBase + rest;
+    }
+  }
+  const m = srcName.match(/([-_ ]?metadata\.json)$/i);
+  return newBase + (m ? m[1] : ".json");
+}
+
+function updateMetaStatus(){
+  const el = document.getElementById("shpMetaStatus"); if (!el) return;
+  const m = S.sourceMeta;
+  if (m && m.length){
+    el.style.display = "block";
+    el.textContent = "✔ Source metadata detected: " + m.map(x => x.name).join(", ") + " — you'll be asked whether to include it when exporting the Shapefile.";
+  } else { el.style.display = "none"; el.textContent = ""; }
+}
+
+function askIncludeMetadata(plan){
+  const escapeHtml = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  return new Promise(resolve => {
+    const back = document.createElement("div"); back.className = "ymodal-back";
+    const box = document.createElement("div"); box.className = "ymodal";
+    box.innerHTML = '<h3>Include source metadata file?</h3>' +
+      '<p>Your original shapefile came with a .json metadata file. FMIS software may not recognise the exported data as valid yield data without it, under a matching name.</p>' +
+      '<ul>' + plan.map(p => '<li>' + escapeHtml(p.src) + ' &rarr; <b>' + escapeHtml(p.newName) + '</b></li>').join("") + '</ul>' +
+      '<p>Copy it into the export .zip, renamed as shown?</p>' +
+      '<div class="btn-row"></div>';
+    const row = box.querySelector(".btn-row");
+    const done = (v) => { document.removeEventListener("keydown", onKey); back.remove(); resolve(v); };
+    const mk = (label, v, primary) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; if (primary) b.style.borderColor = "var(--accent)"; b.onclick = () => done(v); row.appendChild(b); return b; };
+    mk("Cancel export", "cancel"); mk("Export without it", "skip"); const inc = mk("Include & rename", "include", true);
+    const onKey = (ev) => { if (ev.key === "Escape") done("cancel"); };
+    document.addEventListener("keydown", onKey);
+    back.appendChild(box); document.body.appendChild(back); inc.focus();
+  });
+}
+
 document.getElementById("fileShapefile").addEventListener("change", async (e) => {
   const files = [...e.target.files]; if (!files.length) return;
   try{
     const gj = await readShapefileFiles(files);
-    const label = files.length === 1 ? files[0].name : files.map(f=>f.name).join(" + ");
+    const meta = await collectShapefileMetadata(files);
+    const label = files.filter(f => !/\.json$/i.test(f.name)).map(f=>f.name).join(" + ") || files[0].name;
+    const before = S.rawRows;
     ingestFeatureCollection(gj, label, "Shapefile");
+    if (S.rawRows !== before){ S.sourceMeta = meta.length ? meta : null; updateMetaStatus(); }
   } catch(err){ toast("Shapefile import error: " + err.message, true); }
   e.target.value = "";
 });
 
 function finishImport(){
+  S.sourceMeta = null; updateMetaStatus();
   document.getElementById("importStatusSection").style.display = "block";
   document.getElementById("stFile").textContent = S.sourceFilename;
   document.getElementById("stFormat").textContent = S.sourceFormat;
@@ -3974,6 +4069,20 @@ function normalizeJsonVal(v){
 document.getElementById("btnExportShapefile").addEventListener("click", async () => {
   if (!requireData()) return;
   const { lon, lat } = S.mapping;
+  const base = baseName()+"_export";
+  let metaPlan = [], includeMeta = false;
+  if (S.sourceMeta && S.sourceMeta.length){
+    const used = new Set();
+    metaPlan = S.sourceMeta.map(m => {
+      let n = metaTargetName(m.name, m.shpBases, base), i = 2;
+      while (used.has(n.toLowerCase())) n = n.replace(/(\.json)$/i, "_" + (i++) + "$1");
+      used.add(n.toLowerCase());
+      return { src:m.name, newName:n, data:m.data };
+    });
+    const choice = await askIncludeMetadata(metaPlan);
+    if (choice === "cancel") return;
+    includeMeta = choice === "include";
+  }
   const { cols, rows } = buildExportData();
   const propCols = cols.filter(c=>c!==lon && c!==lat);
   const isPolygon = rows.length && !!rows[0].__poly__;
@@ -3982,18 +4091,20 @@ document.getElementById("btnExportShapefile").addEventListener("click", async ()
     ? packShpShxPolygon(rows, r => r.__poly__)
     : packShpShx(rows, lon, lat);
   const zip = new JSZip();
-  const base = baseName()+"_export";
   zip.file(base+".shp", shpBytes);
   zip.file(base+".shx", shxBytes);
   zip.file(base+".dbf", dbf);
   zip.file(base+".prj", PRJ_WGS84);
+  zip.file(base+".cpg", DBF_CODEPAGE);
+  if (includeMeta) for (const p of metaPlan) zip.file(p.newName, p.data);
   if (Object.keys(nameMap).length){
     const lines = ["dbf_name,original_name", ...Object.entries(nameMap).map(([k,v])=>`${k},${csvEscape(v)}`)];
     zip.file("fieldnames.csv", lines.join("\n"));
   }
   const blob = await zip.generateAsync({ type:"blob" });
   downloadBlob(blob, base+".zip", "application/zip");
-  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points"));
+  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points") +
+    (includeMeta ? " + metadata .json" : (metaPlan.length ? ". Metadata .json NOT included — copy and rename it manually for FMIS use." : "")));
 });
 
 document.getElementById("btnExportAgLeader").addEventListener("click", () => {
