@@ -29,30 +29,6 @@ There's nothing to install. Either:
 
 The app itself runs entirely client-side — your data is processed in your browser and is never uploaded anywhere. It does load a few JavaScript libraries (Leaflet for mapping, PapaParse for CSV parsing, JSZip for zipped Shapefile export, shp.js for reading Shapefiles) from a public CDN (cdnjs.cloudflare.com), so an internet connection is needed the first time the page loads in a session, even though your yield data itself stays local.
 
-## Hosting on GitHub Pages
-
-This repo is set up to be served directly by GitHub Pages, no build step required:
-
-1. Push this repo to GitHub (see below if you haven't already).
-2. In the repo, go to **Settings → Pages**.
-3. Under **Build and deployment → Source**, choose **Deploy from a branch**.
-4. Set **Branch** to `main` (or whichever branch you push to) and folder to **/ (root)**, then **Save**.
-5. GitHub will publish the site at `https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO-NAME/` within a minute or two — because the tool is `index.html` at the repo root, that URL loads it directly.
-6. Come back and update the link at the top of this README once it's live.
-
-If you'd rather push from the command line:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit — Yield Editor Pro Web"
-git branch -M main
-git remote add origin https://github.com/CoryWeber1988/YieldEditorPro/.git
-git push -u origin main
-```
-
-Then enable Pages as described above.
-
 ## Usage guide
 
 The tabs run roughly in the order you'd use them:
