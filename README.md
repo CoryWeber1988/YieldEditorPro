@@ -29,6 +29,7 @@ There's nothing to install. Either:
 
 The app itself runs entirely client-side — your data is processed in your browser and is never uploaded anywhere. It does load a few JavaScript libraries (Leaflet for mapping, PapaParse for CSV parsing, JSZip for zipped Shapefile export, shp.js for reading Shapefiles) from a public CDN (cdnjs.cloudflare.com), so an internet connection is needed the first time the page loads in a session, even though your yield data itself stays local.
 
+
 ## Usage guide
 
 The tabs run roughly in the order you'd use them:
