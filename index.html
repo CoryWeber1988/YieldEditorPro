@@ -446,7 +446,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
       <div class="panel" id="panel-delay">
         <div class="section">
           <h3>Detect grain-flow delay</h3>
-          <div class="hint" style="margin-top:0; margin-bottom:10px;">Finds the time lag between the header cutting the crop and the flow sensor measuring it, using phase correlation (Lee et al. 2012, Trans. ASABE 55(3)). The analysis runs on the file <b>exactly as imported</b> — before balancing, filters or any other cleaning — so nothing done on the other tabs can bias the answer. An incorrect delay shows up as the “sawtooth” pattern between alternate passes; the correct delay is the one that makes neighbouring passes agree best.</div>
+          <div class="hint" style="margin-top:0; margin-bottom:10px;">Finds the time lag between the header cutting the crop and the flow sensor measuring it, using phase correlation (Lee et al. 2012, Trans. ASABE 55(3)). The analysis runs on the file as imported <b>after any date / machine / moisture balancing</b> you've enabled on the Balance tab (so calibration steps between harvest days or combines don't masquerade as pass-to-pass noise), but before filters or any other cleaning. Re-run it after changing the balancing. An incorrect delay shows up as the “sawtooth” pattern between alternate passes; the correct delay is the one that makes neighbouring passes agree best.</div>
           <div class="row">
             <div class="field"><label>Search from (s)</label><input type="number" id="dlyMin" value="-10" step="1"></div>
             <div class="field"><label>to (s)</label><input type="number" id="dlyMax" value="25" step="1"></div>
@@ -477,8 +477,8 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
         </div>
 
         <div class="section">
-          <h3>Apply before all other steps</h3>
-          <label class="chk-line"><input type="checkbox" id="dlyEnabled"><span>Apply flow-delay correction first — before Balance and Filters</span></label>
+          <h3>Apply after balancing, before filters</h3>
+          <label class="chk-line"><input type="checkbox" id="dlyEnabled"><span>Apply flow-delay correction — after Balance, before Filters</span></label>
           <div class="field">
             <label>Delay to apply (s) — positive reads yield from later in the pass</label>
             <input type="number" id="dlyApply" step="1" value="0">
@@ -489,7 +489,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
             <button class="btn" id="btnDelayApply">Apply settings</button>
           </div>
           <div class="hint" id="dlyApplyHint"></div>
-          <div class="hint">Open <b>⇆ Raw | Clean</b> in the top bar to watch the effect side by side. The delay is relative to the file as imported: if the monitor export already applied a delay, this is the <i>additional</i> correction. Don't also enable the observation-based <b>Grain flow delay</b> filter — the two would stack.</div>
+          <div class="hint">Open <b>⇆ Raw | Clean</b> in the top bar to watch the effect side by side. The delay is relative to the file as imported (balancing runs first and doesn't change timing): if the monitor export already applied a delay, this is the <i>additional</i> correction. Don't also enable the observation-based <b>Grain flow delay</b> filter — the two would stack.</div>
         </div>
       </div>
 
@@ -711,7 +711,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
           <p><b>Sign.</b> A positive delay means the yield recorded at a position was really measured that many seconds <i>later</i> — the same direction as the Grain flow delay filter. The result is relative to the file as imported, so if the monitor export already applied a delay (AgLeader exports commonly apply 12 s) it is the <i>additional</i> correction, usually near zero.</p>
           <p><b>Pixel size.</b> If a Swath width column is mapped the pixel size is 0.7 × the median swath, so that adjacent passes fall in adjacent pixels. Otherwise it is taken from the point where the ratio of valid pixels and the ratio of coupled pixels cross, as described in the paper. The image side is rounded up to a power of 2 for the FFT; pixels beyond the field are treated as empty. You can type a pixel size to override either.</p>
           <p><b>Reading the result.</b> Confidence is <i>Low</i> when the individual noise-field answers disagree by more than 3 s (the paper's criterion for a questionable estimate), when the peak sits on the edge of the search range, or when the curve is nearly flat; <i>Medium</i> for moderate spread or fewer than 5,000 points. In the paper's 50-field test about 90% of estimates were accurate; the failures were nearly all small fields with few points or very little yield variation. If confidence is Low, widen the range, compare the Raw | Clean view by eye, or enter a delay you trust.</p>
-          <p><b>Applying it.</b> <b>Use recommended</b> (or typing a value and pressing <b>Apply settings</b>) makes the correction the very first pipeline step — before balancing and every filter — re-reading yield (and the other yield column and, optionally, Moisture) at the shifted time within each pass. Readings that would fall beyond the start or end of a pass are dropped. One delay is applied to the whole file; if a file mixes combines with different delays, analyse and correct them separately.</p>
+          <p><b>Applying it.</b> <b>Use recommended</b> (or typing a value and pressing <b>Apply settings</b>) makes the correction the pipeline step right after balancing and ahead of every filter — re-reading the balanced yield (and the other yield column and, optionally, Moisture) at the shifted time within each pass. Readings that would fall beyond the start or end of a pass are dropped. One delay is applied to the whole file; if a file mixes combines with different delays, analyse and correct them separately.</p>
           <p>Reference: Lee, D. H., K. A. Sudduth, S. T. Drummond, S. O. Chung and D. B. Myers. 2012. Automated yield map delay identification using phase correlation methodology. <i>Trans. ASABE</i> 55(3): 743-752. This is an independent implementation, not the authors' software.</p>
         </div>
 
@@ -725,7 +725,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
           <h3>Balance</h3>
           <p><b>Date balancing</b> and <b>machine balancing</b> each scale a group's mean yield to match a base group you pick (mean-ratio scaling) — useful when harvest conditions or a monitor's calibration drifted across days, or when one combine in a fleet reads consistently high or low. Both operate on the primary yield column only.</p>
           <p><b>Moisture balancing</b> is different: it computes its scaling factor from the ratio of average <i>moisture</i> readings between machines, not average yield, then applies that factor to yield. Use it when you believe two machines' yield means genuinely differ for real agronomic reasons, but one machine's moisture meter is separately out of calibration — scaling by the yield ratio directly would erase real field variation along with the sensor error, while scaling by the moisture ratio targets the sensor issue specifically. Requires Machine ID and Moisture mapped.</p>
-          <p>All three balancing options write to a shared <code>yield_balanced</code> column and can be chained — date, then machine, then moisture, in that order, whichever are enabled. Filters and Post-Cal that follow use this balanced column automatically once it exists.</p>
+          <p>All three balancing options write to a shared <code>yield_balanced</code> column and can be chained — date, then machine, then moisture, in that order, whichever are enabled. Balancing is the first step of the pipeline: it runs <i>before</i> the flow-delay correction (and the delay analysis reads the balanced yield), and the other yield column receives the same factors so wet and dry stay consistent. Dates are grouped by local calendar day. Filters and Post-Cal that follow use this balanced column automatically once it exists.</p>
         </div>
 
         <div class="section help-block">
@@ -3511,6 +3511,50 @@ function finishImport(){
 }
 
 /* ---------------------------------------------------------------
+   Date / machine / moisture balancing — shared by the pipeline and by the
+   flow-delay analysis (which must see the same balanced yield the pipeline
+   will later delay-correct). Mutates `rows` in place.
+   Returns { workingYieldCol, workingSecondaryCol, factors }.
+   --------------------------------------------------------------- */
+function applyBalancing(rows, ctx){
+  const { yieldCol, secondaryCol, timestamp, machine, moisture, onStep } = ctx;
+  const B = S.balance;
+  let workingYieldCol = yieldCol;
+  let workingSecondaryCol = secondaryCol || null;
+  const factors = {};
+  const stages = [];
+  if (B.dateEnabled && B.dateBase && timestamp)
+    stages.push({ key:"date", step:"BAL-DATE", label:"Date balancing", base:B.dateBase, keyFn: r => dateKey(r[timestamp]) });
+  if (B.machineEnabled && B.machineBase && machine)
+    stages.push({ key:"machine", step:"BAL-MACHINE", label:"Machine balancing", base:B.machineBase, keyFn: r => String(r[machine]) });
+  if (B.moistureEnabled && B.moistureBase && machine && moisture)
+    stages.push({ key:"moisture", step:"BAL-MOISTURE", label:"Moisture balancing", base:B.moistureBase, keyFn: r => String(r[machine]) });
+
+  for (const st of stages){
+    const valueCol = st.key === "moisture" ? moisture : workingYieldCol;
+    const { factors: f, error } = computeGroupFactors(rows, valueCol, st.keyFn, st.base);
+    if (error){ toast(error, true); continue; }
+    if (st.key === "date") delete f.unknown;   // rows with no usable date stay unscaled
+    const outCol = applyGroupFactors(rows, workingYieldCol, st.key === "moisture" ? "_moisturebal" : "_balanced", st.keyFn, f);
+    for (const r of rows) r.yield_balanced = r[outCol];
+    workingYieldCol = "yield_balanced";
+    // The other yield column gets the identical factors so the wet/dry pair stays consistent.
+    if (workingSecondaryCol){
+      for (const r of rows){
+        const g = st.keyFn(r);
+        const fac = f[g] !== undefined ? f[g] : 1.0;
+        const v = parseFloat(r[workingSecondaryCol]);
+        r.yield_balanced_alt = isFinite(v) ? v * fac : NaN;
+      }
+      workingSecondaryCol = "yield_balanced_alt";
+    }
+    factors[st.key] = f;
+    if (onStep) onStep(st.step, st.label, rows);
+  }
+  return { workingYieldCol, workingSecondaryCol, factors };
+}
+
+/* ---------------------------------------------------------------
    Pipeline: transects -> filters -> balance
    --------------------------------------------------------------- */
 function runPipeline({ trace=false } = {}){
@@ -3546,58 +3590,34 @@ function runPipeline({ trace=false } = {}){
   // Step 0 of the Raw | Clean view: the data exactly as imported.
   snap("IMPORT", "Imported (raw)", S.rawRows, yieldCol);
 
-  // Flow-delay correction (Flow Delay tab) — the very first processing step,
-  // ahead of balancing and every filter, so everything downstream sees yield
-  // that is already registered to the right position on the ground.
+  // Balancing runs first — it corrects date/machine/moisture-meter
+  // differences between combines before the flow-delay correction (whose
+  // pattern recognition compares neighbouring passes, so it must see
+  // already-balanced yield) and before any filter (especially the
+  // std-deviation-of-yield filter). The primary yield column is balanced
+  // into yield_balanced; the other yield column receives the same factors.
+  S.balanceFactors = {};
+  const bal = applyBalancing(rows, {
+    yieldCol, secondaryCol: secondaryYieldCol, timestamp, machine, moisture,
+    onStep: (step, label, rs) => { t.push({ step, label: label + " applied", count: rs.length }); snap(step, label, rs, "yield_balanced"); },
+  });
+  let workingYieldCol = bal.workingYieldCol;
+  let workingSecondaryCol = bal.workingSecondaryCol;
+  S.balanceFactors = bal.factors;
+
+  // Flow-delay correction (Flow Delay tab) — runs right after balancing and
+  // ahead of every filter, so everything downstream sees yield that is
+  // already registered to the right position on the ground. It re-reads the
+  // BALANCED yield columns (and optionally Moisture) at the shifted time.
   if (S.delay.enabled && +S.delay.seconds){
     const dsec = +S.delay.seconds;
-    const cols = [yieldCol, secondaryYieldCol, S.delay.shiftMoisture ? moisture : null];
+    const cols = [workingYieldCol, workingSecondaryCol, S.delay.shiftMoisture ? moisture : null];
     const res = PCDI.applyDelay(rows, { delay: dsec, cols, tsCol: timestamp, assumedDt: S.delay.assumedDt || 1 });
     rows = res.rows;
     S.delayApplied = { seconds: dsec, dropped: res.dropped, modes: res.modes, shiftedMoisture: !!(S.delay.shiftMoisture && moisture) };
     const lbl = `Flow-delay correction (${dsec > 0 ? "+" : ""}${dsec} s)`;
     t.push({ step:"FLOWDELAY", label: lbl, count: rows.length });
-    snap("FLOWDELAY", lbl, rows, yieldCol);
-  }
-
-  // Balancing runs first — it corrects date/machine/moisture-meter
-  // differences between combines before any filter (especially the
-  // std-deviation-of-yield filter) sees the data. Balancing only ever
-  // touches the primary yield column.
-  let workingYieldCol = yieldCol;
-  S.balanceFactors = {};
-  if (S.balance.dateEnabled && S.balance.dateBase && timestamp){
-    const res = balanceByGroup(rows, workingYieldCol, r => dateKey(r[timestamp]), S.balance.dateBase);
-    if (res.error) toast(res.error, true);
-    else {
-      for (const r of rows) r.yield_balanced = r[res.balancedCol];
-      workingYieldCol = "yield_balanced";
-      S.balanceFactors.date = res.factors;
-      t.push({ step:"BAL-DATE", label:"Date balancing applied", count: rows.length });
-      snap("BAL-DATE", "Date balancing", rows, "yield_balanced");
-    }
-  }
-  if (S.balance.machineEnabled && S.balance.machineBase && machine){
-    const res = balanceByGroup(rows, workingYieldCol, r => String(r[machine]), S.balance.machineBase);
-    if (res.error) toast(res.error, true);
-    else {
-      for (const r of rows) r.yield_balanced = r[res.balancedCol];
-      workingYieldCol = "yield_balanced";
-      S.balanceFactors.machine = res.factors;
-      t.push({ step:"BAL-MACHINE", label:"Machine balancing applied", count: rows.length });
-      snap("BAL-MACHINE", "Machine balancing", rows, "yield_balanced");
-    }
-  }
-  if (S.balance.moistureEnabled && S.balance.moistureBase && machine && moisture){
-    const res = balanceByMoisture(rows, workingYieldCol, moisture, r => String(r[machine]), S.balance.moistureBase);
-    if (res.error) toast(res.error, true);
-    else {
-      for (const r of rows) r.yield_balanced = r[res.balancedCol];
-      workingYieldCol = "yield_balanced";
-      S.balanceFactors.moisture = res.factors;
-      t.push({ step:"BAL-MOISTURE", label:"Moisture balancing applied", count: rows.length });
-      snap("BAL-MOISTURE", "Moisture balancing", rows, "yield_balanced");
-    }
+    snap("FLOWDELAY", lbl, rows, workingYieldCol);
   }
 
   // Filters — run against the balanced yield column when balancing
@@ -3617,7 +3637,7 @@ function runPipeline({ trace=false } = {}){
       // unit-specific threshold — so it's meaningful to apply to the
       // secondary yield column and Moisture at the same time, using the
       // exact same shift, producing their own delay-corrected values.
-      const extraCols = [secondaryYieldCol, moisture].filter(Boolean);
+      const extraCols = [workingSecondaryCol, moisture].filter(Boolean);
       next = Filters.DELAY(rows, workingYieldCol, f.val || 0, extraCols);
     }
     else if (code === "START") next = Filters.START(rows, f.val || 0);
@@ -3650,8 +3670,8 @@ function runPipeline({ trace=false } = {}){
   // dry/wet identity and Moisture out as explicitly-named "clean"
   // attributes for whichever platforms need the wet + dry + moisture
   // trio to build their own yield maps.
-  const dryRawCol = S.mapping.yieldDry ? (yieldCol === S.mapping.yieldDry ? workingYieldCol : S.mapping.yieldDry) : null;
-  const wetRawCol = S.mapping.yieldWet ? (yieldCol === S.mapping.yieldWet ? workingYieldCol : S.mapping.yieldWet) : null;
+  const dryRawCol = S.mapping.yieldDry ? (yieldCol === S.mapping.yieldDry ? workingYieldCol : (workingSecondaryCol || S.mapping.yieldDry)) : null;
+  const wetRawCol = S.mapping.yieldWet ? (yieldCol === S.mapping.yieldWet ? workingYieldCol : (workingSecondaryCol || S.mapping.yieldWet)) : null;
   for (const r of rows){
     if (dryRawCol) r.yield_dry_clean = r[dryRawCol];
     if (wetRawCol) r.yield_wet_clean = r[wetRawCol];
@@ -3693,11 +3713,34 @@ function runPipeline({ trace=false } = {}){
   return { rows, trace: t };
 }
 
+// Harvest-day key for date balancing. Handles ISO / locale strings and the
+// numeric forms monitors commonly export (epoch seconds or milliseconds,
+// yyyymmdd, Excel serial days). The day is the LOCAL calendar day, so an
+// evening harvest isn't pushed onto the next day the way UTC conversion did.
 function dateKey(ts){
-  if (!ts) return "unknown";
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return String(ts).slice(0,10);
-  return d.toISOString().slice(0,10);
+  if (ts === undefined || ts === null || ts === "" ) return "unknown";
+  let d = null;
+  const num = (typeof ts === "number") ? ts : (/^\s*-?\d+(\.\d+)?\s*$/.test(String(ts)) ? parseFloat(ts) : NaN);
+  if (isFinite(num)){
+    if (num <= 0) return "unknown";
+    if (num >= 19000101 && num <= 21001231 && Number.isInteger(num)){
+      const y = Math.floor(num/10000), m = Math.floor(num/100)%100, dd = num%100;
+      if (m >= 1 && m <= 12 && dd >= 1 && dd <= 31) return `${y}-${String(m).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+    }
+    if (num > 1e11) d = new Date(num);                       // epoch milliseconds
+    else if (num > 1e8) d = new Date(num * 1000);            // epoch seconds
+    else if (num > 20000 && num < 80000) d = new Date(Math.round((num - 25569) * 86400000)); // Excel serial day
+    else return "unknown";
+  } else {
+    d = new Date(ts);
+    if (isNaN(d.getTime())){
+      const m = String(ts).match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      return m ? `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` : "unknown";
+    }
+  }
+  if (isNaN(d.getTime())) return "unknown";
+  const p2 = n => String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
 }
 
 function recompute(){
@@ -3717,6 +3760,7 @@ function recompute(){
     } else pcHint.textContent = "Enabled, but no target value entered yet.";
   }
   populateBalanceOptions();
+  syncAttrToProcessedYield();
   renderPoints();
   renderSummaryPreview();
   if (document.getElementById("manDrawHint")) updateManHint(manRemovedCount());
@@ -3725,7 +3769,10 @@ function recompute(){
 }
 
 document.getElementById("btnApplyFilters").addEventListener("click", () => { readFiltersFromUI(); recompute(); });
-document.getElementById("btnApplyBalance").addEventListener("click", () => { readBalanceFromUI(); recompute(); });
+document.getElementById("btnApplyBalance").addEventListener("click", () => {
+  readBalanceFromUI(); recompute();
+  if (S.delayResult){ const st = document.getElementById("dlyStatus"); if (st) st.textContent = "Balancing changed since the last analysis — re-run Analyze so the delay is estimated on the balanced yield."; }
+});
 document.getElementById("btnApplyPostCal").addEventListener("click", () => { readPostCalFromUI(); recompute(); });
 
 function readBalanceFromUI(){
@@ -3791,8 +3838,20 @@ function populateAttrSelect(){
   S.activeAttr = sel.value || null;
 }
 document.getElementById("attrSelect").addEventListener("change", (e) => {
-  S.activeAttr = e.target.value; renderPoints();
+  S.activeAttr = e.target.value; S.attrUserChosen = true; renderPoints();
 });
+// Until the user picks a column themselves, the map follows the processed yield
+// column — otherwise balancing / post-cal would run but the map would keep
+// colouring the untouched raw yield and look as if nothing had been scaled.
+function syncAttrToProcessedYield(){
+  if (S.attrUserChosen || !S.workingYieldCol) return;
+  const sel = document.getElementById("attrSelect");
+  const primary = getPrimaryYieldCol();
+  if (S.activeAttr && S.activeAttr !== primary && S.activeAttr !== "yield_balanced") return;
+  if ([...sel.options].some(o => o.value === S.workingYieldCol)){
+    sel.value = S.workingYieldCol; S.activeAttr = S.workingYieldCol;
+  }
+}
 
 function colorForRatio(t){
   // red (low) -> gold (mid) -> green (high), t in [0,1]
@@ -4595,6 +4654,7 @@ function updateDelayUI(){
 }
 
 function onNewDataset(){
+  S.attrUserChosen = false;
   S.delayResult = null;
   S.compare.scale = null;
   S.compare.step = "final";
@@ -4631,7 +4691,7 @@ function setDelayRunningUI(running){
 async function runDelayAnalysis(){
   if (dlyRunning) return;
   const yieldCol = getPrimaryYieldCol();
-  const { lon, lat, timestamp, velocity, machine } = S.mapping;
+  const { lon, lat, timestamp, velocity, machine, moisture } = S.mapping;
   if (!S.rawRows.length || !lon || !lat || !yieldCol){
     toast("Import data and map Longitude, Latitude and a yield column first.", true);
     return;
@@ -4648,11 +4708,17 @@ async function runDelayAnalysis(){
   st.textContent = "Preparing raw data…";
   try{
     await new Promise(r => setTimeout(r, 30));          // let the UI paint first
-    // Work on slim copies of the RAW rows (nothing cleaned, balanced or filtered).
-    const keys = [...new Set([lon, lat, timestamp, velocity, machine, yieldCol].filter(Boolean))];
+    // Work on slim copies of the imported rows (no filters or other cleaning), with
+    // the Balance-tab corrections applied first — the same balanced yield the
+    // pipeline will later delay-correct — so the pass-to-pass comparison isn't
+    // thrown off by date/machine calibration steps.
+    const keys = [...new Set([lon, lat, timestamp, velocity, machine, moisture, yieldCol].filter(Boolean))];
     const slim = S.rawRows.map(r => { const o = {}; for (const k of keys) o[k] = r[k]; return o; });
     computeTransects(slim, lon, lat, timestamp, velocity, machine);
-    const prep = PCDI.prepare(slim, { lonCol:lon, latCol:lat, tsCol:timestamp, yieldCol, assumedDt:D.assumedDt });
+    const balRes = applyBalancing(slim, { yieldCol, secondaryCol:null, timestamp, machine, moisture });
+    const analysisYieldCol = balRes.workingYieldCol;
+    const balancedKinds = Object.keys(balRes.factors);
+    const prep = PCDI.prepare(slim, { lonCol:lon, latCol:lat, tsCol:timestamp, yieldCol:analysisYieldCol, assumedDt:D.assumedDt });
     if (prep.nValid < 200) throw new Error("Fewer than 200 usable points (valid position and yield) — not enough to analyse.");
     if (prep.nPasses < 3) throw new Error("Fewer than 3 passes were detected — the method compares neighbouring passes.");
 
@@ -4678,7 +4744,7 @@ async function runDelayAnalysis(){
     const meta = {
       n: prep.nValid, passes: prep.nPasses, dt: prep.dtMedian, modes: prep.modes, nTotal: prep.n,
       basis, swathM, machines, polygon, rangeMin: D.rangeMin, rangeMax: D.rangeMax,
-      seconds: (performance.now() - t0) / 1000, yieldCol,
+      seconds: (performance.now() - t0) / 1000, yieldCol, balancedKinds,
     };
     S.delayResult = { res, meta };
     showDelayResult();
@@ -4760,7 +4826,7 @@ function showDelayResult(){
   ];
   dlyEl("dlyStats").innerHTML = rows.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join("");
   dlyEl("dlyWarnings").innerHTML = a.warnings.map(w => `<li class="${w.bad ? "bad" : ""}">${w.text}</li>`).join("");
-  dlyEl("dlyStatus").textContent = `Done in ${fmtNum(meta.seconds, 1)} s — analysed the data exactly as imported (no cleaning applied).`;
+  dlyEl("dlyStatus").textContent = `Done in ${fmtNum(meta.seconds, 1)} s — analysed the imported data${meta.balancedKinds && meta.balancedKinds.length ? " after " + meta.balancedKinds.join(" + ") + " balancing" : " (no balancing enabled)"}; no filters applied.`;
   const useBtn = dlyEl("btnDelayUseRec");
   useBtn.disabled = false;
   useBtn.textContent = `Use recommended (${sgn(res.best)} s)`;
