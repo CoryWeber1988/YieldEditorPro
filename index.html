@@ -265,6 +265,9 @@ textarea.summaryPreview{
 .warnlist li{margin-bottom:3px;}
 .warnlist li.bad{color:var(--rust);}
 canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius);}
+details.adv{margin-top:10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--panel2); padding:8px 10px;}
+details.adv > summary{cursor:pointer; font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;}
+details.adv[open] > summary{color:var(--accent2);}
 .chk-line{display:flex; align-items:flex-start; gap:8px; font-size:12px; margin-bottom:9px; cursor:pointer; line-height:1.4;}
 .chk-line input{accent-color:var(--accent); width:15px; height:15px; flex:0 0 auto; margin-top:1px;}
 .warn-text{color:var(--rust);}
@@ -408,7 +411,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
             <label>ESRI Shapefile — points or polygons (.zip, or select the unzipped .shp + .dbf + .shx + .prj together — include any .json metadata file so it can be carried into the export)</label>
             <input type="file" id="fileShapefile" accept=".zip,.shp,.dbf,.shx,.prj,.cpg,.json" multiple>
           </div>
-          <div class="hint">Column roles are auto-detected from common monitor naming (JD Ops Center, FieldView, AgLeader/SMS, generic). Review under <b>Column Mapping</b> below. Polygon inputs — as-harvested yield-cell files, zone/management-area files — import one row per polygon; the real footprint is kept for the map and for GeoJSON/Shapefile export, while filtering, balancing, and GeoTIFF interpolation use each polygon's centroid.</div>
+          <div class="hint">Column roles are auto-detected from common monitor naming (JD Ops Center, FieldView, AgLeader/SMS, generic). Review under <b>Column Mapping</b> below. Combine passes are detected automatically from the points' direction of travel — see <b>Pass detection</b>. Polygon inputs — as-harvested yield-cell files, zone/management-area files — import one row per polygon; the real footprint is kept for the map and for GeoJSON/Shapefile export, while filtering, balancing, and GeoTIFF interpolation use each polygon's centroid.</div>
         </div>
         <div class="section" id="importStatusSection" style="display:none;">
           <h3>Loaded file</h3>
@@ -418,6 +421,38 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
             <div class="k">Records</div><div class="v" id="stRecords">—</div>
             <div class="k">Columns</div><div class="v" id="stColumns">—</div>
           </div>
+        </div>
+        <div class="section" id="passSection" style="display:none;">
+          <h3>Pass detection</h3>
+          <div class="hint" style="margin-top:0;">Points are grouped into combine passes by <b>common heading</b> over a <b>minimum distance travelled</b>. The Start/End Pass Delay filters and Smooth Velocity work within each pass.</div>
+          <div class="stat-grid" style="margin-top:8px;">
+            <div class="k">Passes found</div><div class="v" id="passCount">—</div>
+            <div class="k">Points per pass</div><div class="v" id="passPts">—</div>
+          </div>
+          <div class="hint" id="passWarn" style="display:none; color:var(--gold);"></div>
+          <details class="adv">
+            <summary>Advanced settings</summary>
+            <div class="field" style="margin-top:8px;">
+              <label>Method</label>
+              <select id="passMethod">
+                <option value="heading">Heading + minimum distance (recommended)</option>
+                <option value="legacy">Legacy: time gap / position jump only</option>
+              </select>
+            </div>
+            <div class="row">
+              <div class="field"><label>Heading tolerance (°)</label><input type="number" id="passHeadingTol" min="5" max="170" step="1" value="30"></div>
+              <div class="field"><label>Min. distance (ft)</label><input type="number" id="passMinDist" min="10" step="10" value="100"></div>
+            </div>
+            <div class="row">
+              <div class="field"><label>Break on time gap (s)</label><input type="number" id="passGapSec" min="1" step="1" value="5"></div>
+              <div class="field"><label>Break on jump (ft)</label><input type="number" id="passJumpFt" min="20" step="10" value="150"></div>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary" id="btnApplyPass">Apply &amp; re-detect</button>
+              <button class="btn ghost" id="btnResetPass">Reset defaults</button>
+            </div>
+            <div class="hint">A new pass starts when the direction of travel moves more than the <b>heading tolerance</b> away from the pass's average and stays there for the <b>minimum distance</b>. Raise the distance (or tolerance) if curved passes are being cut in pieces; lower them for short or tightly curved rows. Time gap and jump always start a new pass.</div>
+          </details>
         </div>
         <div class="section" id="mappingSection" style="display:none;">
           <h3>Column mapping</h3>
@@ -701,7 +736,11 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
 
         <div class="section help-block">
           <h3>Passes</h3>
-          <p>Before anything else runs, points are grouped into combine passes automatically — by a gap in time, or a jump in position too large for the reported ground speed to explain. If a Machine ID column is mapped, grouping is done separately per machine first, so a file that interleaves multiple machines' records by timestamp doesn't read as one machine teleporting to another's position. Pass grouping is what the Start/End Pass Delay filters (both the observation-count and the seconds versions) and the Smooth Velocity filter key off of.</p>
+          <p>Before anything else runs, points are grouped into combine passes automatically. A <b>pass</b> is a run of points travelling in a common direction for a minimum distance — the header cutting one straight (or gently curving) strip of the field. Pass grouping is what the Start/End Pass Delay filters (both the observation-count and the seconds versions), the Smooth Velocity filter and the Flow Delay analysis key off of, so if passes are identified wrongly those filters can remove far too much or too little. The <b>Import</b> tab shows how many passes were found and the typical number of points in each.</p>
+          <p><b>How it works.</b> Working through the points in order, the tool measures the direction of travel (heading) at each point, using a point a short distance further along the track so GPS jitter doesn't create false headings. Each pass keeps an average heading. When the heading moves away from that average by more than the <b>heading tolerance</b> and stays there for at least the <b>minimum distance</b>, a new pass starts at the point where the change began. Brief wobbles, and gentle curves that return within tolerance, do not split a pass. Short pieces (less than the minimum distance) — typically the headland turn between two passes — are merged into the neighbouring pass, so the End Pass Delay filter naturally trims them. A pass also always ends on a <b>time gap</b> longer than the set number of seconds, or a <b>jump</b> in position larger than the set distance between two consecutive points (for example the combine leaving the field and coming back). If a Machine ID column is mapped, grouping is done separately per machine first, so a file that interleaves several machines' records by timestamp doesn't read as one machine teleporting to another's position. The method needs only positions, so it also works when there is no Timestamp or Velocity column.</p>
+          <p><b>Advanced settings</b> (Import tab ▸ Pass detection ▸ Advanced settings) — the defaults suit typical field work, but you can change them and press <b>Apply &amp; re-detect</b>:</p>
+          <p><b>Heading tolerance</b> (default 30°) — how far the direction may drift from a pass's average before it counts as a change. Raise it for fields with strongly curved passes (contour or pivot patterns); lower it if neighbouring passes that turn only slightly are being merged. <b>Minimum distance</b> (default 100 ft) — how far the new direction must be held before a new pass starts, and the length below which a fragment is treated as part of a turn. Raise it if curved passes are being cut into pieces; lower it for short rows or small fields. <b>Break on time gap</b> (default 5 s) and <b>Break on jump</b> (default 150 ft) — hard breaks that always start a new pass; widen them for monitors that log slowly. <b>Method</b> can be switched to <i>Legacy</i>, the earlier behaviour that looks only at time gaps and position jumps. Legacy cannot separate back-to-back passes logged without a pause, so a whole field may end up as one pass; use it only to reproduce older results.</p>
+          <p><b>If a pass filter removes almost everything</b> (for example Start/End Pass Delay), the tool shows a warning with the pass count. Very short passes (a median of a few points) mean the passes are being cut too finely — increase the minimum distance or heading tolerance; a single pass for a whole field means the turns aren't being recognised — decrease them. The pass-detection settings are saved with the session and listed in the Summary.</p>
         </div>
 
         <div class="section help-block">
@@ -731,7 +770,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
         <div class="section help-block">
           <h3>Filters</h3>
           <p>The USDA Yield Editor's standard filter set, each optional and independently configurable. By default all enabled filters are applied in the traditional fixed order the USDA Yield Editor uses them in, regardless of how the list below is arranged — this is the "bulk" method. Check <b>"Apply filters in the order listed below"</b> to instead run them in whatever order you drag the rows into (grab the <code>⋮⋮</code> handle on the left of each row) — useful when the order genuinely changes the result, e.g. running Position/Manual-selection before a Std.-deviation-of-yield filter so outliers inside a hand-drawn zone don't skew the mean used to judge the rest of the field. Every row-removal filter (everything except Grain flow delay) drops the same rows regardless of which yield column is primary — the non-primary yield column and Moisture simply lose those rows too, since a whole record is removed at once, not one column at a time.</p>
-          <p><b>Grain flow delay</b> shifts yield readings by N observations to correct for the lag between grain entering the header and reaching the flow sensor. Since this is a re-index rather than a value threshold, it's applied to the primary yield column, the non-primary yield column (if mapped), and Moisture together, using the same N-observation shift for all three — they share one auger, so one sensor-lag correction is physically valid for all of them. <b>Start/End Pass Delay</b> drop the first/last N observations of every pass, to cut out header-raising/lowering transients — measured in observation count. <b>Start/End Pass Delay (sec)</b> do the same thing but measured in seconds elapsed from the true start or end of the pass (using the full pass, unaffected by whatever earlier filters have already removed), for monitors that don't log at a steady rate. You can enable either version, both, or neither for start and end independently.</p>
+          <p><b>Grain flow delay</b> shifts yield readings by N observations to correct for the lag between grain entering the header and reaching the flow sensor. Since this is a re-index rather than a value threshold, it's applied to the primary yield column, the non-primary yield column (if mapped), and Moisture together, using the same N-observation shift for all three — they share one auger, so one sensor-lag correction is physically valid for all of them. <b>Start/End Pass Delay</b> drop the first/last N observations of every pass, to cut out header-raising/lowering transients — measured in observation count. A "pass" here is the segment found by pass detection (common heading over a minimum distance — see Passes above), so these filters depend on it being set sensibly. <b>Start/End Pass Delay (sec)</b> do the same thing but measured in seconds elapsed from the true start or end of the pass (using the full pass, unaffected by whatever earlier filters have already removed), for monitors that don't log at a steady rate. You can enable either version, both, or neither for start and end independently.</p>
           <p><b>Maximum/Minimum velocity</b> drop points outside a ground-speed range. <b>Smooth velocity</b> drops a point if its speed changed by more than the given fraction from the previous point in the same pass — catches jerky GPS/speed readings. <b>Minimum swath</b> drops points where active header width fell below a threshold (partial-width passes). <b>Maximum/Minimum yield</b> and <b>Std. deviation of yield</b> are judged against the primary yield column only — a threshold entered for one unit system (e.g. bu/ac) wouldn't mean anything applied to a flow rate in the other. <b>Position (bounding box)</b> and <b>Manual selection</b> use shapes you draw on the map — Position keeps only points inside a box, Manual selection excludes points inside one or more drawn polygons.</p>
           <p>Once filtering finishes, whichever of Dry/Processed and Wet/Unprocessed yield are mapped are copied out as <code>yield_dry_clean</code> / <code>yield_wet_clean</code>, alongside <code>moisture_clean</code> if Moisture is mapped — three explicitly-named, filtered (and delay-corrected) attributes for platforms that want the wet + dry + moisture trio to build their own yield maps. The hint line below "Apply All Filters" shows the running record count after each enabled stage, in order, so you can see which filter is removing how much data.</p>
         </div>
@@ -756,7 +795,7 @@ canvas#dlyChart{width:100%; height:170px; display:block; background:var(--panel2
 
         <div class="section help-block">
           <h3>Sessions</h3>
-          <p><b>Save Session</b> (top bar) downloads your current column mapping, filters, balancing, and Post-Cal settings as a small JSON file — not the source data itself. <b>Load Session</b> restores those settings; re-import the original source file afterward (or first) to see results.</p>
+          <p><b>Save Session</b> (top bar) downloads your current column mapping, pass-detection settings, filters, balancing, and Post-Cal settings as a small JSON file — not the source data itself. <b>Load Session</b> restores those settings; re-import the original source file afterward (or first) to see results.</p>
         </div>
 
         <div class="section help-block">
@@ -962,7 +1001,184 @@ function parseTimestampToUnix(v){
   return isNaN(t) ? NaN : t / 1000;
 }
 
-function computeTransects(rows, lonCol, latCol, tsCol, velCol, machineCol){
+/* ---------------------------------------------------------------
+   Pass detection — default "heading" mode.
+
+   A combine pass is a run of points travelling in a common direction
+   for a minimum distance. Walking the points in order (per machine):
+     1. A local heading is computed for every point from the point
+        that lies at least `baseline` ft further along the track
+        (GPS jitter over a few feet would otherwise give random
+        headings).
+     2. The current segment keeps a running mean heading. A point whose
+        heading differs from it by more than `headingTol` degrees is
+        held as "pending"; if the new heading persists for `minDist`
+        ft of travel, the segment is split there and a new pass starts
+        at the first pending point. If the heading comes back inside
+        tolerance first (a wobble or gentle curve) nothing is split.
+     3. Segments shorter than `minDist` ft (headland turn fragments)
+        are merged into the neighbouring pass instead of being left as
+        tiny passes of their own.
+   Hard breaks always start a new pass regardless of heading: a time
+   gap longer than `gapSec`, or a jump of more than `jumpFt` between
+   consecutive points.
+   "legacy" mode keeps the older time-gap / position-jump rules.
+   --------------------------------------------------------------- */
+const PASS_DETECT_DEFAULTS = { method:"heading", headingTol:30, minDist:100, gapSec:5, jumpFt:150 };
+
+function angDiffDeg(a, b){
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+function stampPassBounds(rows, tsCol){
+  // Record each pass's [min,max] timestamp so time-based start/end delay
+  // filters can measure "seconds into the pass" regardless of what later
+  // filters leave behind.
+  if (!tsCol) return;
+  const bounds = new Map();
+  for (const r of rows){
+    const ts = parseTimestampToUnix(r[tsCol]);
+    if (!isFinite(ts)) continue;
+    const b = bounds.get(r.__transect);
+    if (!b) bounds.set(r.__transect, { min: ts, max: ts });
+    else { if (ts < b.min) b.min = ts; if (ts > b.max) b.max = ts; }
+  }
+  for (const r of rows){
+    const b = bounds.get(r.__transect);
+    if (b){ r.__passStartTs = b.min; r.__passEndTs = b.max; }
+  }
+}
+
+function groupIndicesByMachine(rows, machineCol){
+  if (!machineCol) return [rows.map((_, i) => i)];
+  const byMachine = new Map();
+  for (let i = 0; i < rows.length; i++){
+    const m = rows[i][machineCol];
+    if (!byMachine.has(m)) byMachine.set(m, []);
+    byMachine.get(m).push(i);
+  }
+  return [...byMachine.values()];
+}
+
+function computeTransects(rows, lonCol, latCol, tsCol, velCol, machineCol, opts){
+  const o = Object.assign({}, PASS_DETECT_DEFAULTS, opts || {});
+  if (o.method === "legacy") return computeTransectsLegacy(rows, lonCol, latCol, tsCol, velCol, machineCol);
+  return computeTransectsHeading(rows, lonCol, latCol, tsCol, machineCol, o);
+}
+
+function computeTransectsHeading(rows, lonCol, latCol, tsCol, machineCol, o){
+  const num = (v, def) => (isFinite(v) && v > 0) ? +v : def;
+  const tol = Math.min(num(o.headingTol, 30), 170);
+  const minDist = num(o.minDist, 100);
+  const gapSec = num(o.gapSec, 5);
+  const jumpFt = num(o.jumpFt, 150);
+  const baseline = Math.max(5, Math.min(minDist / 4, 50));
+  const FT_PER_DEG = 111320 * 3.28084;
+  const MAX_LOOK = 60;
+
+  let passId = 0;
+  for (const idxs of groupIndicesByMachine(rows, machineCol)){
+    const n = idxs.length;
+    if (!n) continue;
+
+    // local flat projection in feet
+    let lat0 = NaN, lon0 = NaN;
+    for (const i of idxs){
+      const la = parseFloat(rows[i][latCol]), lo = parseFloat(rows[i][lonCol]);
+      if (isFinite(la) && isFinite(lo)){ lat0 = la; lon0 = lo; break; }
+    }
+    const kLon = FT_PER_DEG * Math.cos((isFinite(lat0) ? lat0 : 0) * Math.PI / 180);
+    const X = new Float64Array(n), Y = new Float64Array(n), T = new Float64Array(n);
+    for (let k = 0; k < n; k++){
+      const r = rows[idxs[k]];
+      const la = parseFloat(r[latCol]), lo = parseFloat(r[lonCol]);
+      X[k] = isFinite(lo) && isFinite(lon0) ? (lo - lon0) * kLon : NaN;
+      Y[k] = isFinite(la) && isFinite(lat0) ? (la - lat0) * FT_PER_DEG : NaN;
+      T[k] = tsCol ? parseTimestampToUnix(r[tsCol]) : NaN;
+    }
+
+    // step distance and hard breaks (brk[k] = point k starts a new span)
+    const d = new Float64Array(n);
+    const brk = new Uint8Array(n);
+    brk[0] = 1;
+    for (let k = 1; k < n; k++){
+      const dist = (X[k] === X[k] && X[k-1] === X[k-1]) ? Math.hypot(X[k] - X[k-1], Y[k] - Y[k-1]) : 0;
+      d[k] = dist;
+      const dt = (T[k] === T[k] && T[k-1] === T[k-1]) ? (T[k] - T[k-1]) : NaN;
+      if ((isFinite(dt) && dt > gapSec) || dist > jumpFt) brk[k] = 1;
+    }
+
+    // local heading (degrees, 0 = north, clockwise)
+    const h = new Float64Array(n).fill(NaN);
+    for (let k = 0; k < n; k++){
+      if (X[k] !== X[k]) continue;
+      let done = false;
+      for (let j = k + 1; j < n && j <= k + MAX_LOOK && !brk[j]; j++){
+        if (X[j] !== X[j]) continue;
+        const dx = X[j] - X[k], dy = Y[j] - Y[k];
+        if (Math.hypot(dx, dy) >= baseline){ h[k] = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360; done = true; break; }
+      }
+      if (done) continue;
+      // end of a span: look backwards instead
+      for (let j = k - 1; j >= 0 && j >= k - MAX_LOOK; j--){
+        if (X[j] === X[j]){
+          const dx = X[k] - X[j], dy = Y[k] - Y[j];
+          if (Math.hypot(dx, dy) >= baseline){ h[k] = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360; break; }
+        }
+        if (brk[j]) break;
+      }
+    }
+
+    // segmentation
+    const segOf = new Int32Array(n);
+    let segId = -1, sx = 0, sy = 0, cnt = 0, pending = -1, pendDist = 0;
+    const addVec = (a) => { const r = a * Math.PI / 180; sx += Math.sin(r); sy += Math.cos(r); cnt++; };
+    for (let k = 0; k < n; k++){
+      if (brk[k]){ segId++; sx = 0; sy = 0; cnt = 0; pending = -1; pendDist = 0; }
+      segOf[k] = segId;
+      const hk = h[k];
+      if (hk !== hk) continue;
+      if (cnt === 0){ addVec(hk); continue; }
+      const ref = (Math.atan2(sx, sy) * 180 / Math.PI + 360) % 360;
+      if (angDiffDeg(hk, ref) <= tol){
+        pending = -1; pendDist = 0;
+        addVec(hk);
+      } else {
+        if (pending < 0){ pending = k; pendDist = 0; } else pendDist += d[k];
+        if (pendDist >= minDist){
+          // the new heading has persisted long enough: split at its first point
+          segId++; sx = 0; sy = 0; cnt = 0;
+          for (let q = pending; q <= k; q++){ segOf[q] = segId; if (h[q] === h[q]) addVec(h[q]); }
+          pending = -1; pendDist = 0;
+        }
+      }
+    }
+
+    // collect segments, then merge short ones (turn fragments) into a neighbour
+    const segs = [];
+    for (let k = 0; k < n; k++){
+      const last = segs[segs.length - 1];
+      if (!last || segOf[k] !== last.id) segs.push({ id: segOf[k], first: k, last: k, len: 0, hard: !!brk[k] });
+      else { last.last = k; last.len += d[k]; }
+    }
+    const merged = [];
+    for (const s of segs){
+      const prev = merged[merged.length - 1];
+      if (prev && !s.hard && (s.len < minDist || prev.len < minDist)){ prev.last = s.last; prev.len += s.len; }
+      else merged.push(s);
+    }
+    for (const s of merged){
+      passId++;
+      for (let k = s.first; k <= s.last; k++) rows[idxs[k]].__transect = passId;
+    }
+  }
+
+  stampPassBounds(rows, tsCol);
+  return rows;
+}
+
+function computeTransectsLegacy(rows, lonCol, latCol, tsCol, velCol, machineCol){
   const GAP_THRESHOLD = 5;     // seconds
   const SPATIAL_THRESHOLD = 5; // x expected distance
 
@@ -1331,6 +1547,7 @@ if (typeof module !== "undefined") {
     COLUMN_ALIASES, detectColumn, normColName,
     AGL_COLS, GPS_EPOCH_OFFSET, parseAgLeaderText,
     coerceNumeric, haversineFt, parseTimestampToUnix, computeTransects,
+    computeTransectsHeading, computeTransectsLegacy, PASS_DETECT_DEFAULTS, angDiffDeg,
     Filters, balanceByGroup, balanceByMoisture, computeGroupFactors, applyGroupFactors,
     estimateTotalAcres, applyPostCalibration, basicStats,
   };
@@ -2646,6 +2863,8 @@ const S = {
   delayApplied: null,  // {seconds, dropped, modes} from the last pipeline run, or null
   snapshots: [],       // per-step {step,label,count,rows,vals} from the last pipeline run (for Raw | Clean)
   compare: { on:false, step:"final", scale:null },
+  passDetect: Object.assign({}, PASS_DETECT_DEFAULTS), // pass-segmentation settings (Import tab ▸ Pass detection)
+  passStats: null,     // {passes, medianPts, minPts, maxPts} from the last pipeline run
 };
 
 let map, boundaryLayer;
@@ -3557,6 +3776,69 @@ function applyBalancing(rows, ctx){
 /* ---------------------------------------------------------------
    Pipeline: transects -> filters -> balance
    --------------------------------------------------------------- */
+/* ---------------------------------------------------------------
+   Pass-detection settings + status (Import tab)
+   --------------------------------------------------------------- */
+function summarizePasses(rows){
+  const counts = new Map();
+  for (const r of rows) counts.set(r.__transect, (counts.get(r.__transect) || 0) + 1);
+  const sizes = [...counts.values()].sort((a, b) => a - b);
+  if (!sizes.length) return null;
+  return { passes: sizes.length, medianPts: sizes[sizes.length >> 1], minPts: sizes[0], maxPts: sizes[sizes.length - 1] };
+}
+function readPassFromUI(){
+  const num = (id, def) => { const v = parseFloat(document.getElementById(id).value); return (isFinite(v) && v > 0) ? v : def; };
+  const D = PASS_DETECT_DEFAULTS;
+  S.passDetect = {
+    method: document.getElementById("passMethod").value === "legacy" ? "legacy" : "heading",
+    headingTol: Math.min(170, num("passHeadingTol", D.headingTol)),
+    minDist: num("passMinDist", D.minDist),
+    gapSec: num("passGapSec", D.gapSec),
+    jumpFt: num("passJumpFt", D.jumpFt),
+  };
+}
+function applyPassToUI(){
+  const p = Object.assign({}, PASS_DETECT_DEFAULTS, S.passDetect || {});
+  document.getElementById("passMethod").value = p.method;
+  document.getElementById("passHeadingTol").value = p.headingTol;
+  document.getElementById("passMinDist").value = p.minDist;
+  document.getElementById("passGapSec").value = p.gapSec;
+  document.getElementById("passJumpFt").value = p.jumpFt;
+  const heading = p.method !== "legacy";
+  document.getElementById("passHeadingTol").disabled = !heading;
+  document.getElementById("passMinDist").disabled = !heading;
+}
+function updatePassStatus(){
+  const ps = S.passStats;
+  document.getElementById("passCount").textContent = ps ? ps.passes.toLocaleString() : "—";
+  document.getElementById("passPts").textContent = ps
+    ? `${ps.medianPts.toLocaleString()} median (${ps.minPts.toLocaleString()}–${ps.maxPts.toLocaleString()})` : "—";
+  const warn = document.getElementById("passWarn");
+  const n = S.rawRows.length;
+  let msg = "";
+  if (ps && n > 50){
+    if (ps.medianPts < 10) msg = "Passes are very short (median under 10 points) — pass detection may be splitting the data too finely. Open Advanced settings and increase the minimum distance or heading tolerance.";
+    else if (ps.passes === 1 && n > 2000) msg = "Only one pass was found for a large file. If the combine turned around in it, open Advanced settings and lower the heading tolerance or minimum distance.";
+  }
+  warn.style.display = msg ? "block" : "none";
+  warn.textContent = msg;
+}
+document.getElementById("passMethod").addEventListener("change", () => { readPassFromUI(); applyPassToUI(); });
+document.getElementById("btnApplyPass").addEventListener("click", () => {
+  readPassFromUI(); applyPassToUI();
+  if (!S.rawRows.length){ toast("Pass settings saved — they apply once data is loaded."); return; }
+  readFiltersFromUI();
+  recompute();
+  if (S.delayResult){ const st = document.getElementById("dlyStatus"); if (st) st.textContent = "Pass detection changed since the last analysis — re-run Analyze."; }
+  toast("Passes re-detected: " + (S.passStats ? S.passStats.passes.toLocaleString() : "0") + " found.");
+});
+document.getElementById("btnResetPass").addEventListener("click", () => {
+  S.passDetect = Object.assign({}, PASS_DETECT_DEFAULTS);
+  applyPassToUI();
+  if (S.rawRows.length){ readFiltersFromUI(); recompute(); }
+});
+applyPassToUI();
+
 function runPipeline({ trace=false } = {}){
   if (!S.rawRows.length) return { rows: [], trace: [] };
   const t = [];
@@ -3573,7 +3855,10 @@ function runPipeline({ trace=false } = {}){
   const { lon, lat, timestamp, velocity, machine, moisture, swath } = S.mapping;
 
   if (lon && lat){
-    computeTransects(rows, lon, lat, timestamp, velocity, machine);
+    computeTransects(rows, lon, lat, timestamp, velocity, machine, S.passDetect);
+    S.passStats = summarizePasses(rows);
+  } else {
+    S.passStats = null;
   }
   t.push({ step:"IMPORT", label:"Records imported", count: rows.length });
 
@@ -3758,6 +4043,20 @@ function recompute(){
     else if (S.postCalResult && S.postCalResult.factor !== null && S.postCalResult.factor !== undefined){
       pcHint.textContent = `Applied factor: ×${S.postCalResult.factor.toFixed(4)}  (current wet mean: ${fmtNum(S.postCalResult.currentMeanWet,2)}${S.postCalResult.acres?`, ~${fmtNum(S.postCalResult.acres,1)} ac (${S.postCalResult.acresSource==="boundary"?"boundary":"est. from swath×speed"})`:""})`;
     } else pcHint.textContent = "Enabled, but no target value entered yet.";
+  }
+  document.getElementById("passSection").style.display = S.rawRows.length ? "block" : "none";
+  updatePassStatus();
+  // Warn when a pass-based filter wipes out most of the data — the usual
+  // cause is passes that were detected far too short (or a unit mix-up).
+  const PASS_FILTERS = ["START","END","STARTSEC","ENDSEC"];
+  for (let i = 1; i < trace.length; i++){
+    if (PASS_FILTERS.includes(trace[i].step) && trace[i-1].count > 20 && trace[i].count < trace[i-1].count * 0.5){
+      const ps = S.passStats;
+      toast(`${trace[i].label} removed ${Math.round(100 * (1 - trace[i].count / trace[i-1].count))}% of the points` +
+        (ps ? ` (${ps.passes.toLocaleString()} passes, median ${ps.medianPts.toLocaleString()} points each)` : "") +
+        ". Check Import ▸ Pass detection ▸ Advanced settings.", true);
+      break;
+    }
   }
   populateBalanceOptions();
   syncAttrToProcessedYield();
@@ -4374,6 +4673,7 @@ function summaryMarkdown(){
   for (const [role,label] of ROLE_LIST) lines.push(`- ${label}: \`${S.mapping[role] || "—"}\``);
   lines.push(`- Primary yield for filtering/outlier detection: **${S.mapping.primaryYield === "wet" ? "Wet/Unprocessed" : "Dry/Processed"}**`);
   lines.push(``);
+  lines.push(...passSummaryLines());
   lines.push(...delaySummaryLines());
   lines.push(`## Filters applied`);
   if (!d.enabledFilters.length) lines.push(`- none`);
@@ -4473,6 +4773,9 @@ ${ROLE_LIST.map(([role,label])=>`<tr><td>${label}</td><td><code>${escapeHtml(S.m
 <tr><th>Primary yield for filtering/outlier detection</th><td>${S.mapping.primaryYield === "wet" ? "Wet/Unprocessed" : "Dry/Processed"}</td></tr>
 </table>
 
+<h2>Pass detection</h2>
+<table>${passSummaryRows().map(([k,v])=>`<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}</table>
+
 <h2>Flow delay (PCDI)</h2>
 <table>${delaySummaryRows().map(([k,v])=>`<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}</table>
 
@@ -4543,7 +4846,7 @@ document.getElementById("btnSaveSession").addEventListener("click", () => {
     mapping:S.mapping, units:S.units, filters:S.filters, balance:S.balance, postCal:S.postCal,
     filterOrder:S.filterOrder, customFilterOrder:S.customFilterOrder,
     manPolygons:S.manPolygons, sourceFilename:S.sourceFilename,
-    delay:S.delay,
+    delay:S.delay, passDetect:S.passDetect,
   };
   downloadBlob(JSON.stringify(session, null, 2), baseName()+".yesession.json", "application/json");
   toast("Session settings saved");
@@ -4561,6 +4864,8 @@ document.getElementById("loadSessionInput").addEventListener("change", async (e)
     if (typeof session.customFilterOrder === "boolean") S.customFilterOrder = session.customFilterOrder;
     if (session.manPolygons) S.manPolygons = session.manPolygons;
     if (session.delay) Object.assign(S.delay, session.delay);
+    if (session.passDetect) S.passDetect = Object.assign({}, PASS_DETECT_DEFAULTS, session.passDetect);
+    applyPassToUI();
     applyDelayToUI();
     buildFilterList();
     applyFiltersToUI();
@@ -4714,7 +5019,7 @@ async function runDelayAnalysis(){
     // thrown off by date/machine calibration steps.
     const keys = [...new Set([lon, lat, timestamp, velocity, machine, moisture, yieldCol].filter(Boolean))];
     const slim = S.rawRows.map(r => { const o = {}; for (const k of keys) o[k] = r[k]; return o; });
-    computeTransects(slim, lon, lat, timestamp, velocity, machine);
+    computeTransects(slim, lon, lat, timestamp, velocity, machine, S.passDetect);
     const balRes = applyBalancing(slim, { yieldCol, secondaryCol:null, timestamp, machine, moisture });
     const analysisYieldCol = balRes.workingYieldCol;
     const balancedKinds = Object.keys(balRes.factors);
@@ -4915,6 +5220,21 @@ function delaySummaryRows(){
     rows.push(["Correction", "not applied"]);
   }
   return rows;
+}
+function passSummaryRows(){
+  const p = Object.assign({}, PASS_DETECT_DEFAULTS, S.passDetect || {});
+  const rows = [];
+  if (p.method === "legacy") rows.push(["Method", `legacy (time gap > ${p.gapSec} s or position jump)`]);
+  else rows.push(["Method", `heading + minimum distance — tolerance ${p.headingTol}°, minimum distance ${p.minDist} ft; new pass on time gap > ${p.gapSec} s or jump > ${p.jumpFt} ft`]);
+  const ps = S.passStats;
+  rows.push(["Passes found", ps ? `${ps.passes.toLocaleString()} (median ${ps.medianPts.toLocaleString()} points per pass)` : "—"]);
+  return rows;
+}
+function passSummaryLines(){
+  const out = ["## Pass detection"];
+  for (const [k, v] of passSummaryRows()) out.push(`- ${k}: ${v}`);
+  out.push("");
+  return out;
 }
 function delaySummaryLines(){
   const out = ["## Flow delay (PCDI)"];
