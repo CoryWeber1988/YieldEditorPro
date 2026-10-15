@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [2026-10-15]
+
+### Added
+- polygon selection tool under balancing tab
+- reordering ability of the balancing tools
+- adjust polygon area using a percentage factor to scale yield or moisture readings up or down in target areas
+
+### Changed
+- flow delay calculation occurs after balancing by default now to improve calculations
+
 ## [2026-10-02]
 
 ### Changed
