@@ -12,6 +12,11 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 ### Changed
 - flow delay calculation occurs after balancing by default now to improve calculations
 
+### [2026-10-05]
+
+### Added
+- automatic flow delay calculation method used in original yield editor tool using the paper "DETERMINING YIELD MONITORING SYSTEM DELAY TIME WITH GEOSTATISTICAL AND DATA SEGMENTATION APPROACHES" by S. O. Chung, K. A. Sudduth, S. T. Drummond. Found at https://www.ars.usda.gov/ARSUserFiles/50701000/cswq-0036-128359.pdf
+  
 ## [2026-10-02]
 
 ### Changed
