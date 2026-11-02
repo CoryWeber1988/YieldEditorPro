@@ -58,6 +58,7 @@ button, select, input{font-family:var(--sans); font-size:12.5px;}
 /* ---------- shapefile metadata callout + prompt ---------- */
 .callout{border:1px solid var(--line); border-left:3px solid var(--gold); background:var(--panel2); padding:8px 10px; margin-top:8px; font-size:11.5px; line-height:1.5; color:var(--text);}
 .callout b.t{display:block; color:var(--gold); margin-bottom:3px;}
+.beta-badge{font-size:9.5px; letter-spacing:.08em; padding:1px 6px; border:1px solid var(--gold); color:var(--gold); border-radius:var(--radius); text-transform:none;}
 .callout .meta-status{margin-top:6px; color:var(--accent2); font-weight:600;}
 .ymodal-back{position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10000; display:flex; align-items:center; justify-content:center; padding:16px;}
 .ymodal{background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--gold); border-radius:var(--radius); max-width:480px; width:100%; padding:16px 18px; box-shadow:0 10px 40px rgba(0,0,0,.5);}
@@ -697,10 +698,15 @@ details.adv[open] > summary{color:var(--accent2);}
               <span><b>Simplified</b> — only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names; every other source column is left out. Smallest file, but it will not satisfy platforms that need the full original column set.</span>
             </label>
           </div>
-          <div class="hint">Applies to GeoJSON, Shapefile, and CSV point-data exports below. AgLeader Text always uses its own fixed field schema.</div>
+          <div class="hint">Applies to GeoJSON, Shapefile, and CSV point-data exports below. AgLeader Text always uses its own fixed field schema. The <b>interpolated gap-fill</b> option below is only available with Streamlined or Simplified.</div>
         </div>
         <div class="section">
           <h3>Point data</h3>
+          <label class="chk-line">
+            <input type="checkbox" id="exportGapFill" disabled>
+            <span><b>Include interpolated points to fill gaps</b> (GeoJSON, Shapefile, CSV) — for re-uploading to online platforms, which otherwise show filtered-out areas as having no yield data. The source file's own points that were removed are restored with all their original attributes and given cleaned yield/moisture values interpolated (IDW) from the cleaned points. Restored points outside the boundary, or physically overlapping an earlier point, are left out. The GeoTIFF is not included.</span>
+          </label>
+          <div class="hint" id="exportGapFillHint" style="margin-top:-4px; margin-bottom:8px;"></div>
           <div class="btn-row">
             <button class="btn" id="btnExportGeojson">GeoJSON</button>
             <button class="btn" id="btnExportShapefile">Shapefile (.zip)</button>
@@ -715,6 +721,63 @@ details.adv[open] > summary{color:var(--accent2);}
             The Shapefile .zip contains <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, <code>.prj</code> and <code>.cpg</code>. If the original source shapefile came with a <code>.json</code> metadata file (e.g. John Deere's <code>-Metadata.json</code>), FMIS software needs a copy sitting in the same folder as the cleaned data, <b>renamed to match the new file</b>, before it will still recognise the export as valid yield data. If that file was imported with your shapefile, you'll be prompted on export to add it to the .zip already renamed. Otherwise, copy it into the folder yourself and rename it to match.
             <div class="meta-status" id="shpMetaStatus" style="display:none;"></div>
           </div>
+        </div>
+        <div class="section">
+          <h3>ISOXML (TASKDATA) <span class="beta-badge">BETA</span></h3>
+          <div class="callout">
+            <b class="t">Beta testing feature</b>
+            ISOXML export is new and still being tested. Check that the .zip imports and the yield map looks right in your data management platform (e.g. John Deere Operations Center) before relying on it, and please report anything that doesn't import cleanly.
+          </div>
+          <div class="hint" style="margin-top:8px;">Writes a <code>TASKDATA.zip</code> (<code>TASKDATA/TASKDATA.XML</code> + binary TimeLog) from the current filtered/balanced dataset: wet or dry yield, moisture, speed and swath width (or a fixed working width), with grower/farm/field/crop, display units, work state and task averages. Based on the Shapefile → ISOXML converter v1.4.</div>
+          <div class="row" style="margin-top:8px;">
+            <div class="field"><label>Grower</label><input type="text" id="isoGrower" placeholder="Grower"></div>
+            <div class="field"><label>Farm</label><input type="text" id="isoFarm" placeholder="Farm"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Field</label><input type="text" id="isoField" placeholder="blank = output file name"></div>
+            <div class="field"><label>Task name</label><input type="text" id="isoTask" value="Harvest" placeholder="Harvest"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Crop (required)</label><select id="isoCrop"></select></div>
+            <div class="field"><label>Test weight (lb/bu)</label><input type="number" id="isoBushel" min="1" step="0.5" placeholder="for bu/ac"></div>
+          </div>
+          <div class="field" id="isoCropCustomWrap" style="display:none;"><label>Crop name</label><input type="text" id="isoCropCustom" maxlength="32"></div>
+          <div class="row">
+            <div class="field"><label>Yield column to write</label><select id="isoYieldSrc"></select></div>
+            <div class="field"><label>Yield basis</label>
+              <select id="isoBasis">
+                <option value="wet">Wet mass (DDI 84) + moisture per record</option>
+                <option value="dry">Dry, std moisture (DDI 181 + 184)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>Machine (written to the device identity)</label>
+            <select id="isoMachine">
+              <option value="auto">Auto — forage harvester for dry basis, otherwise combine</option>
+              <option value="combine">Combine harvester</option>
+              <option value="forage">Forage harvester</option>
+            </select>
+          </div>
+          <div class="hint" id="isoMachineHint"></div>
+          <div class="field" id="isoRefMoistWrap"><label id="isoRefMoistLbl">Standard moisture (%)</label><input type="number" id="isoRefMoist" min="1" max="99" step="0.1" placeholder="e.g. 13"></div>
+          <div class="row" id="isoManualTime">
+            <div class="field"><label>Start date (no Timestamp mapped)</label><input type="date" id="isoDate"></div>
+            <div class="field"><label>Start time</label><input type="time" id="isoTime" value="08:00"></div>
+          </div>
+          <div class="hint" id="isoTimeHint"></div>
+          <div class="row" id="isoFixedWidthRow">
+            <div class="field"><label>Fixed working width (no Swath column mapped)</label><input type="number" id="isoFixedWidth" min="0" step="0.1" placeholder="blank = not written"></div>
+            <div class="field"><label>Width unit</label>
+              <select id="isoFixedWidthUnit"><option value="ft">ft</option><option value="m">m</option><option value="in">in</option></select>
+            </div>
+          </div>
+          <label style="display:flex; align-items:center; gap:8px; margin:6px 0; cursor:pointer;">
+            <input type="checkbox" id="isoIncludeBoundary" checked> <span>Include field boundary in the ISOXML</span>
+          </label>
+          <div class="hint" id="isoBoundaryHint"></div>
+          <div class="hint" id="isoUnitHint"></div>
+          <button class="btn primary" id="btnExportIsoxml" style="margin-top:8px;">Export ISOXML (.zip) — beta</button>
+          <div class="callout" id="isoLog" style="display:none; white-space:pre-wrap; font-family:var(--mono); font-size:11px; border-left-color:var(--accent);"></div>
         </div>
         <div class="section">
           <h3>GeoTIFF raster (clipped to boundary)</h3>
@@ -761,7 +824,7 @@ details.adv[open] > summary{color:var(--accent2);}
       <div class="panel" id="panel-help">
         <div class="section help-block">
           <h3>About this tool</h3>
-          <p>Yield Editor Pro Web is a single, self-contained HTML file for cleaning up combine yield-monitor data: import a raw yield file, correct machine/date/moisture calibration drift, run it through a configurable filter set to drop bad points, true it up to a known scale-ticket total, and export the cleaned result as CSV, GeoJSON, Shapefile, AgLeader Text, or an interpolated GeoTIFF raster — all in the browser, with nothing uploaded anywhere. It's aimed at the same job the original desktop Yield Editor does, with a filter/balance/calibrate pipeline, a web map for drawing selections, and session save/load, in a form that needs no installer and runs on anything with a modern browser.</p>
+          <p>Yield Editor Pro Web is a single, self-contained HTML file for cleaning up combine yield-monitor data: import a raw yield file, correct machine/date/moisture calibration drift, run it through a configurable filter set to drop bad points, true it up to a known scale-ticket total, and export the cleaned result as CSV, GeoJSON, Shapefile, AgLeader Text, ISOXML (beta), or an interpolated GeoTIFF raster — all in the browser, with nothing uploaded anywhere. It's aimed at the same job the original desktop Yield Editor does, with a filter/balance/calibrate pipeline, a web map for drawing selections, and session save/load, in a form that needs no installer and runs on anything with a modern browser.</p>
         </div>
 
         <div class="section help-block">
@@ -835,6 +898,8 @@ details.adv[open] > summary{color:var(--accent2);}
         <div class="section help-block">
           <h3>Export &amp; Summary</h3>
           <p>CSV, GeoJSON, and Shapefile exports respect the <b>Column set</b> choice at the top of the Export tab. <b>Full</b> (the previous default behaviour) includes every original column plus whichever cleaned columns exist — wherever balancing or Post-Cal produced a <code>yield_balanced</code> column, and wherever <code>yield_dry_clean</code>/<code>yield_wet_clean</code>/<code>moisture_clean</code> exist, they're included alongside the original columns. <b>Streamlined</b> exports the source file's own columns — same names, same order — with the cleaned wet/dry/moisture values written in place of the raw ones, and adds no <code>_clean</code>-suffixed or <code>yield_balanced</code> columns. Use it when another FMIS platform needs to recognise the file as a normal yield export. <b>Simplified</b> exports only the cleaned wet/dry/moisture values under their <i>original</i> column names (plus position in GeoJSON/Shapefile geometry) and drops every other source column, giving the smallest file; it will not be recognised by platforms that require the full original column set. AgLeader Text export always uses its own fixed field schema regardless of this setting, and prefers an actual mapped Wet/Unprocessed Yield value for its Grain_Flow_lbs_sec field over back-calculating one from the per-acre Dry figure, when one is available. The Summary tab captures the source file, column mapping (including which yield column is primary), every pipeline stage's record count, all balancing and calibration factors, boundary status, and any GeoTIFF exports made in the session (including which interpolation method each used) — downloadable as Markdown or a standalone HTML file.</p>
+          <p><b>Interpolated gap fill.</b> Filtering removes points, and online platforms then draw those areas as having no yield data (they only interpolate the points they are given). Tick <b>Include interpolated points to fill gaps</b> in the Point data section to avoid that in the GeoJSON, Shapefile and CSV exports. It needs a <b>boundary</b> and the <b>Streamlined</b> or <b>Simplified</b> column set (not Full). The source file's points that did not survive the pipeline are restored with every original attribute, and their cleaned wet/dry yield and moisture values are interpolated (inverse-distance weighting) from the cleaned points. Points outside the boundary are dropped, and so is any restored point that physically overlaps an earlier one: candidates are taken in time order (file order without timestamps), and one closer than half the typical point spacing to a point already in the output is skipped. Points that survived filtering are never dropped. No GeoTIFF is added — export that separately.</p>
+          <p><b>ISOXML (beta).</b> The ISOXML section writes a <code>TASKDATA.zip</code> (ISO 11783-10: <code>TASKDATA.XML</code>, a TimeLog header and a binary TimeLog) for data management platforms such as John Deere Operations Center. Pick the crop (needed so the platform can show bu/ac), choose dry/standard-moisture or wet yield, and export. The field outline is your imported boundary when there is one, otherwise the convex hull of the points. Yield, velocity and swath are converted from the units set on the Import tab; empty, negative or non-numeric readings are left out of a record rather than written as 0. This feature is in beta — verify the import in your platform before relying on it.</p>
           <p><b>Shapefile metadata.</b> Shapefile exports include <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, <code>.prj</code> and <code>.cpg</code>. Some FMIS platforms only accept a yield shapefile if its <code>.json</code> metadata file (such as John Deere's <code>-Metadata.json</code>) travels with it under a matching name. When a .json file came in with your source shapefile (inside the .zip, or selected alongside loose files), the Shapefile export asks whether to copy it into the export .zip and renames it to the new base name, keeping any suffix such as <code>-Metadata</code>. The file's contents are copied unchanged. If the source had no metadata file selected, or the export is for a different source type, copy and rename it manually.</p>
         </div>
 
@@ -1691,6 +1756,67 @@ function featureAreaM2(feature){
   return areaDeg2 * mPerDegLat * mPerDegLon;
 }
 
+/** Simple spatial hash for points in a local metric (x,y) space. Used by the
+ *  interpolated-gap-fill export for nearest-neighbour lookups and overlap tests. */
+function makePointIndex(cell){
+  const map = new Map();
+  const OFF = 2097152, MUL = 4194304;
+  const cx = v => Math.floor(v / cell);
+  const key = (ix, iy) => (ix + OFF) * MUL + (iy + OFF);
+  return {
+    cell,
+    add(x, y, id){
+      const k = key(cx(x), cx(y));
+      let a = map.get(k);
+      if (!a){ a = []; map.set(k, a); }
+      a.push(x, y, id);
+    },
+    /** true if any stored point lies closer than r (requires r <= cell) */
+    anyWithin(x, y, r){
+      const ix0 = cx(x), iy0 = cx(y), r2 = r * r;
+      for (let dx = -1; dx <= 1; dx++){
+        for (let dy = -1; dy <= 1; dy++){
+          const a = map.get(key(ix0 + dx, iy0 + dy));
+          if (!a) continue;
+          for (let i = 0; i < a.length; i += 3){
+            const ddx = a[i] - x, ddy = a[i + 1] - y;
+            if (ddx * ddx + ddy * ddy < r2) return true;
+          }
+        }
+      }
+      return false;
+    },
+    /** k nearest stored points as [[dist², id], ...] ascending */
+    knn(x, y, k, maxRing){
+      const ix0 = cx(x), iy0 = cx(y);
+      let cand = [];
+      const lastRing = maxRing || 60;
+      for (let R = 0; R <= lastRing; R++){
+        for (let dx = -R; dx <= R; dx++){
+          for (let dy = -R; dy <= R; dy++){
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== R) continue;
+            const a = map.get(key(ix0 + dx, iy0 + dy));
+            if (!a) continue;
+            for (let i = 0; i < a.length; i += 3){
+              const ddx = a[i] - x, ddy = a[i + 1] - y;
+              cand.push([ddx * ddx + ddy * ddy, a[i + 2]]);
+            }
+          }
+        }
+        if (cand.length >= k){
+          cand.sort((p, q) => p[0] - q[0]);
+          if (cand.length > k) cand.length = k;
+          const lim = R * cell;
+          if (cand[k - 1][0] <= lim * lim) break;   // nothing unscanned can be closer
+        }
+      }
+      cand.sort((p, q) => p[0] - q[0]);
+      if (cand.length > k) cand.length = k;
+      return cand;
+    },
+  };
+}
+
 /** Area-weighted centroid of a single ring (standard polygon-centroid formula). */
 function centroidOfRing(ring){
   let cx = 0, cy = 0, a = 0;
@@ -2393,7 +2519,37 @@ function krigingGrid(points, grid, opts = {}){
   return out;
 }
 
-if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid };
+/* ---------------------------------------------------------------
+   IDW evaluated at arbitrary target points (rather than a regular
+   grid) — same inverse-distance weighting as idwGrid, using the k
+   nearest source points. Coordinates are in a local metric space
+   (metres). Used to fill gaps in the point-data exports.
+   xs/ys/vs: source arrays (non-finite vs are ignored); tx/ty: targets.
+   --------------------------------------------------------------- */
+function idwAtPoints(xs, ys, vs, tx, ty, opts = {}){
+  const power = opts.power ?? 2;
+  const k = opts.k ?? 12;
+  const idx = makePointIndex(opts.cell ?? 10);
+  for (let i = 0; i < xs.length; i++){
+    const v = vs[i];
+    if (v === v && isFinite(v) && isFinite(xs[i]) && isFinite(ys[i])) idx.add(xs[i], ys[i], i);
+  }
+  const out = new Float32Array(tx.length).fill(NaN);
+  for (let t = 0; t < tx.length; t++){
+    const nb = idx.knn(tx[t], ty[t], k, opts.maxRing || 80);
+    if (!nb.length) continue;
+    let wsum = 0, vsum = 0, exact = null;
+    for (const [d2, id] of nb){
+      if (d2 < 1e-10){ exact = vs[id]; break; }
+      const w = 1 / Math.pow(d2, power / 2);
+      wsum += w; vsum += w * vs[id];
+    }
+    out[t] = exact !== null ? exact : (wsum > 0 ? vsum / wsum : NaN);
+  }
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid, idwAtPoints };
 
 </script>
 
@@ -3798,6 +3954,7 @@ function onMappingChanged(){
   updateDelayStatus();
   populateAttrSelect();
   populateGeotiffAttrList();
+  if (typeof refreshIsoxmlUI === "function") refreshIsoxmlUI();
 }
 document.getElementById("primaryYieldDry").addEventListener("change", () => { S.mapping.primaryYield = "dry"; onMappingChanged(); });
 document.getElementById("primaryYieldWet").addEventListener("change", () => { S.mapping.primaryYield = "wet"; onMappingChanged(); });
@@ -4223,7 +4380,8 @@ applyPassToUI();
 function runPipeline({ trace=false } = {}){
   if (!S.rawRows.length) return { rows: [], trace: [] };
   const t = [];
-  let rows = S.rawRows.map(r => Object.assign({}, r)); // fresh copy each run
+  // __ri = index of the source row, so exports can tell which original points survived.
+  let rows = S.rawRows.map((r, i) => Object.assign({}, r, { __ri: i })); // fresh copy each run
   // Per-step snapshots for the Raw | Clean view: the rows that survive each
   // step plus the yield value they carry AT that step (balancing and Post-Cal
   // overwrite yield_balanced in place, so values must be captured now).
@@ -4443,6 +4601,7 @@ function recompute(){
     }
   }
   populateBalanceOptions();
+  if (typeof refreshIsoxmlUI === "function") refreshIsoxmlUI();
   syncAttrToProcessedYield();
   renderPoints();
   renderSummaryPreview();
@@ -4676,6 +4835,7 @@ function setBoundary(geojson, filename){
   toast("Boundary loaded: " + filename);
 }
 function updateGeotiffButton(){
+  refreshGapFillUI();   // gap-fill export also needs the boundary
   const btn = document.getElementById("btnExportGeotiff");
   btn.disabled = !S.boundary;
   document.getElementById("geotiffHint").textContent = S.boundary
@@ -4761,7 +4921,14 @@ function buildExportData(){
     outNames = exportColumns();
     srcKeys = outNames;
   }
-  const rows = S.filteredRows.map(r => {
+  // Optionally restore removed source points with interpolated cleaned values.
+  let srcRows = S.filteredRows, gap = null;
+  if (gapFillWanted()){
+    gap = buildGapRows();
+    srcRows = S.filteredRows.concat(gap.rows);
+    srcRows.sort((a, b) => (a.__ri || 0) - (b.__ri || 0));   // keep the source file's order
+  }
+  const rows = srcRows.map(r => {
     const o = {};
     for (let i = 0; i < outNames.length; i++) o[outNames[i]] = r[srcKeys[i]];
     if (lon) o[lon] = r[lon];
@@ -4769,7 +4936,139 @@ function buildExportData(){
     if (r.__poly__) o.__poly__ = r.__poly__;
     return o;
   });
-  return { cols: outNames, rows, mode };
+  return { cols: outNames, rows, mode, gap };
+}
+
+/* ---------------------------------------------------------------
+   Interpolated gap fill for point exports.
+   Filtering leaves holes that online platforms draw as "no yield".
+   This restores the SOURCE points that were removed (all original
+   attributes carried over) and gives them cleaned yield/moisture
+   values interpolated from the cleaned points (IDW). Restored points
+   are only kept when they lie inside the boundary and do not
+   physically overlap a point already in the output; candidates are
+   processed in time order, so the one that occurred first wins.
+   Points that survived filtering are never dropped.
+   Only offered for the Streamlined / Simplified column sets.
+   --------------------------------------------------------------- */
+function gapFillBlockReason(){
+  if (getExportMode() === "full") return "Not available with the Full column set — choose Streamlined or Simplified.";
+  if (!S.boundary) return "Needs a field boundary — import one on the Boundary tab.";
+  return null;
+}
+function gapFillWanted(){
+  const c = document.getElementById("exportGapFill");
+  return !!(c && c.checked && !c.disabled && !gapFillBlockReason());
+}
+function refreshGapFillUI(){
+  const c = document.getElementById("exportGapFill"), h = document.getElementById("exportGapFillHint");
+  if (!c) return;
+  const reason = gapFillBlockReason();
+  c.disabled = !!reason;
+  if (reason) c.checked = false;
+  h.textContent = reason || "";
+}
+function gapNote(gap){
+  return gap ? ` (incl. ${gap.rows.length.toLocaleString()} interpolated gap point${gap.rows.length === 1 ? "" : "s"})` : "";
+}
+function buildGapRows(){
+  const { lon, lat, timestamp } = S.mapping;
+  const kept = S.filteredRows;
+  const sample = kept[0];
+  const cleanCols = ["yield_dry_clean", "yield_wet_clean", "moisture_clean"].filter(c => sample && sample[c] !== undefined);
+  const res = { rows: [], candidates: 0, overlapSkipped: 0, outsideSkipped: 0, noValueSkipped: 0, radiusM: 0 };
+  if (!kept.length || !cleanCols.length || !S.boundary) return res;
+
+  const keptIds = new Set();
+  for (const r of kept) if (r.__ri !== undefined) keptIds.add(r.__ri);
+
+  // local metric projection
+  let sLat = 0, sLon = 0, n = 0;
+  for (const r of kept){
+    const la = parseFloat(r[lat]), lo = parseFloat(r[lon]);
+    if (isFinite(la) && isFinite(lo)){ sLat += la; sLon += lo; n++; }
+  }
+  if (!n) return res;
+  const lat0 = sLat / n, lon0 = sLon / n;
+  const mLat = 111320, mLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+  const kx = new Float64Array(kept.length), ky = new Float64Array(kept.length);
+  for (let i = 0; i < kept.length; i++){
+    const la = parseFloat(kept[i][lat]), lo = parseFloat(kept[i][lon]);
+    kx[i] = isFinite(lo) ? (lo - lon0) * mLon : NaN;
+    ky[i] = isFinite(la) ? (la - lat0) * mLat : NaN;
+  }
+
+  // typical point spacing (median nearest-neighbour distance of a sample of kept points)
+  const nnIdx = makePointIndex(5);
+  for (let i = 0; i < kept.length; i++) if (kx[i] === kx[i] && ky[i] === ky[i]) nnIdx.add(kx[i], ky[i], i);
+  const nn = [];
+  const step = Math.max(1, Math.floor(kept.length / 3000));
+  for (let i = 0; i < kept.length; i += step){
+    if (kx[i] !== kx[i] || ky[i] !== ky[i]) continue;
+    const nb = nnIdx.knn(kx[i], ky[i], 2, 40);
+    for (const [d2, id] of nb){ if (id !== i && d2 > 1e-4){ nn.push(Math.sqrt(d2)); break; } }
+  }
+  nn.sort((a, b) => a - b);
+  const spacing = nn.length ? nn[nn.length >> 1] : 1;
+  const radius = Math.max(0.05, 0.5 * spacing);       // closer than this to an earlier point = overlapping
+  res.radiusM = radius;
+
+  // boundary test
+  const bFeats = S.boundary.features || [];
+  const bBox = bboxOfFeatureCollection(S.boundary);
+  const inside = (x, y) => {
+    if (x < bBox[0] || x > bBox[2] || y < bBox[1] || y > bBox[3]) return false;
+    for (const f of bFeats) if (pointInPolygonFeature(x, y, f)) return true;
+    return false;
+  };
+
+  // candidates: source points that did not survive the pipeline, inside the boundary
+  const cand = [];
+  for (let i = 0; i < S.rawRows.length; i++){
+    if (keptIds.has(i)) continue;
+    const raw = S.rawRows[i];
+    const la = parseFloat(raw[lat]), lo = parseFloat(raw[lon]);
+    if (!isFinite(la) || !isFinite(lo)) continue;
+    res.candidates++;
+    if (!inside(lo, la)){ res.outsideSkipped++; continue; }
+    cand.push({ i, x: (lo - lon0) * mLon, y: (la - lat0) * mLat, ts: timestamp ? parseTimestampToUnix(raw[timestamp]) : NaN });
+  }
+  cand.sort((a, b) => {
+    const ta = isFinite(a.ts) ? a.ts : Infinity, tb = isFinite(b.ts) ? b.ts : Infinity;
+    return ta !== tb ? (ta < tb ? -1 : 1) : a.i - b.i;
+  });
+
+  // overlap test: earliest first; surviving points always count as already present
+  const ov = makePointIndex(radius);
+  for (let i = 0; i < kept.length; i++) if (kx[i] === kx[i] && ky[i] === ky[i]) ov.add(kx[i], ky[i], 0);
+  const acc = [];
+  for (const c of cand){
+    if (ov.anyWithin(c.x, c.y, radius)){ res.overlapSkipped++; continue; }
+    ov.add(c.x, c.y, 0);
+    acc.push(c);
+  }
+  if (!acc.length) return res;
+
+  // interpolate each cleaned column at the accepted locations
+  const tx = Float64Array.from(acc, c => c.x), ty = Float64Array.from(acc, c => c.y);
+  const cell = Math.min(40, Math.max(3, spacing * 5));
+  const vals = {};
+  for (const col of cleanCols){
+    const vs = new Float64Array(kept.length);
+    for (let i = 0; i < kept.length; i++){ const v = parseFloat(kept[i][col]); vs[i] = isFinite(v) ? v : NaN; }
+    vals[col] = idwAtPoints(kx, ky, vs, tx, ty, { power: 2, k: 12, cell });
+  }
+  for (let j = 0; j < acc.length; j++){
+    const g = Object.assign({}, S.rawRows[acc[j].i]);   // every original attribute carried over
+    g.__ri = acc[j].i;
+    let any = false;
+    for (const col of cleanCols){
+      const v = vals[col][j];
+      if (isFinite(v)){ g[col] = v; any = true; } else g[col] = NaN;
+    }
+    if (any) res.rows.push(g); else res.noValueSkipped++;
+  }
+  return res;
 }
 function csvEscape(v){
   if (v === undefined || v === null) return "";
@@ -4780,18 +5079,19 @@ function csvEscape(v){
 
 document.getElementById("btnExportCsv").addEventListener("click", () => {
   if (!requireData()) return;
-  const { cols, rows } = buildExportData();
+  const { cols, rows, gap } = buildExportData();
   if (!cols.length){ toast("Simplified mode has no cleaned wet/dry/moisture columns to export yet — run Filters first, or switch to Full or Streamlined.", true); return; }
   const lines = [cols.join(",")];
   for (const r of rows) lines.push(cols.map(c=>csvEscape(r[c])).join(","));
   downloadBlob(lines.join("\n"), baseName()+"_export.csv", "text/csv");
-  toast("Exported CSV — " + rows.length.toLocaleString() + " records");
+  toast("Exported CSV — " + rows.length.toLocaleString() + " records" + gapNote(gap));
+  reportGapFill(gap);
 });
 
 document.getElementById("btnExportGeojson").addEventListener("click", () => {
   if (!requireData()) return;
   const { lon, lat } = S.mapping;
-  const { cols, rows } = buildExportData();
+  const { cols, rows, gap } = buildExportData();
   const propCols = cols.filter(c=>c!==lon && c!==lat);
   const isPolygon = rows.length && !!rows[0].__poly__;
   const feats = rows.map(r => {
@@ -4805,8 +5105,16 @@ document.getElementById("btnExportGeojson").addEventListener("click", () => {
   });
   const fc = { type:"FeatureCollection", features:feats };
   downloadBlob(JSON.stringify(fc), baseName()+"_export.geojson", "application/geo+json");
-  toast("Exported GeoJSON — " + feats.length.toLocaleString() + (isPolygon ? " polygons" : " points"));
+  toast("Exported GeoJSON — " + feats.length.toLocaleString() + (isPolygon ? " polygons" : " points") + gapNote(gap));
+  reportGapFill(gap);
 });
+function reportGapFill(gap){
+  const h = document.getElementById("exportGapFillHint");
+  if (!h || !gap) return;
+  h.textContent = `Last export: ${gap.rows.length.toLocaleString()} interpolated point(s) added from ${gap.candidates.toLocaleString()} removed source point(s) — ` +
+    `${gap.outsideSkipped.toLocaleString()} outside the boundary, ${gap.overlapSkipped.toLocaleString()} overlapping an earlier point (within ${gap.radiusM.toFixed(2)} m)` +
+    (gap.noValueSkipped ? `, ${gap.noValueSkipped.toLocaleString()} with no nearby cleaned value` : "") + " left out.";
+}
 function normalizeJsonVal(v){
   if (v === undefined) return null;
   if (typeof v === "number" && Number.isNaN(v)) return null;
@@ -4830,7 +5138,7 @@ document.getElementById("btnExportShapefile").addEventListener("click", async ()
     if (choice === "cancel") return;
     includeMeta = choice === "include";
   }
-  const { cols, rows } = buildExportData();
+  const { cols, rows, gap } = buildExportData();
   const propCols = cols.filter(c=>c!==lon && c!==lat);
   const isPolygon = rows.length && !!rows[0].__poly__;
   const { bytes: dbf, nameMap } = packDBF(rows, propCols);
@@ -4850,8 +5158,9 @@ document.getElementById("btnExportShapefile").addEventListener("click", async ()
   }
   const blob = await zip.generateAsync({ type:"blob" });
   downloadBlob(blob, base+".zip", "application/zip");
-  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points") +
+  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points") + gapNote(gap) +
     (includeMeta ? " + metadata .json" : (metaPlan.length ? ". Metadata .json NOT included — copy and rename it manually for FMIS use." : "")));
+  reportGapFill(gap);
 });
 
 document.getElementById("btnExportAgLeader").addEventListener("click", () => {
@@ -4900,6 +5209,10 @@ function unitToFeet(v, unit){
   return v;
 }
 
+document.querySelectorAll('input[name="exportColMode"]').forEach(r => r.addEventListener("change", refreshGapFillUI));
+document.querySelectorAll('.tabbtn[data-tab="export"]').forEach(b => b.addEventListener("click", refreshGapFillUI));
+refreshGapFillUI();
+
 function requireData(){
   if (!S.filteredRows.length){ toast("No data to export — import and apply filters first.", true); return false; }
   if (!S.mapping.lon || !S.mapping.lat){ toast("Longitude/Latitude are not mapped.", true); return false; }
@@ -4911,6 +5224,724 @@ function baseName(){
   const src = custom || S.sourceFilename || "yield";
   return src.replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"_");
 }
+
+/* ===== isoxml-writer.js =====
+   ISO 11783-10 (ISOXML) TaskData writer — BETA.
+   Port of the shp_to_isoxml v1.5 converter (Python) to plain JavaScript:
+   builds TASKDATA.XML, the TimeLog header (TLG00001.xml) and the binary
+   TimeLog (TLG00001.bin) for a harvest task. Everything here is pure
+   (no DOM) so it can be unit-tested; the Export-tab wiring follows below.
+
+   DDIs are DECIMAL identifiers from the ISO 11783-11 data dictionary:
+     84  Yield, mass per area, wet (mg/m2)      99  Crop moisture (ppm)
+     181 Yield, dry mass per area (mg/m2)       184 Reference moisture for DDI 181 (ppm)
+     397 Actual ground speed (mm/s)             67  Actual working width (mm)
+     141 Work state (0 off / 1 on)
+     263 Average yield, wet (mg/m2)             359 Average yield, dry (mg/m2)
+     262 Average moisture (ppm)
+   v1.4+ layout (matches known-good machine files): DeviceAllocation + stamps, a value
+   presentation (DVP) on every DPD, work state logged with every record, task-level
+   averages in the Task's Time element, no PositionUp in the TimeLog, DataTransferOrigin 2,
+   VersionMinor 1, and a structure label that is a hash of the device structure.
+   --------------------------------------------------------------- */
+// Identity strings are kept identical to the shapefile converter (v1.5).
+const ISOXML_SW_NAME = "SHP-to-ISOXML";
+const ISOXML_SW_VERSION = "1.5";
+const ISOXML_LB_MG = 453592.37;            // mg per lb
+const ISOXML_AC_M2 = 4046.8564224;         // m2 per acre
+const ISOXML_LB_AC = ISOXML_LB_MG / ISOXML_AC_M2;   // 1 lb/ac in mg/m2
+const ISOXML_DDI = { YIELD_WET:84, MOISTURE:99, SPEED:397, SWATH:67, YIELD_DRY:181, REF_MOIST:184,
+                     WORK_STATE:141, AVG_YIELD:263, AVG_MOISTURE:262, AVG_YIELD_DRY:359 };
+/* Machines. The Device's ClientNAME is an ISO 11783-5 NAME (64 bit, 16 hex digits, most significant byte
+   first) and is what a platform uses to decide what kind of machine produced the data. It is a PLACEHOLDER
+   identity (no real manufacturer / serial) that declares the machine type:
+     self-configurable | industry group 2 (agriculture) | ISO device class | function 132 (machine control) | identity.
+   Device classes: 7 = harvesters (combine), 9 = forage harvesters. Same table as EQUIPMENT in the Python tool.
+   (Before v1.5 every file used A000000000000000, device class 0, which was also what planting / seeding / application
+   files carried, so a platform keying machines on ClientNAME could treat a harvest upload as an earlier planter.) */
+const ISOXML_MACHINES = {
+  combine: { label:"Combine Harvester", cls:7, ident:0 },
+  forage:  { label:"Forage Harvester",  cls:9, ident:0 },
+};
+function isoxmlClientName(cls, ident){
+  const v = (1n << 63n) | (2n << 60n) | (BigInt(cls & 0x7F) << 49n) | (132n << 40n) | BigInt((ident || 0) & 0x1FFFFF);
+  return v.toString(16).toUpperCase().padStart(16, "0");
+}
+/* Which machine wrote the data. "auto": a dry-basis yield (DDI 181 + 184) or the corn silage preset is treated as
+   forage harvesting -> Forage Harvester; anything else -> Combine Harvester. An explicit choice always wins. */
+function isoxmlResolveMachine(choice, basis, cropKey){
+  if (choice === "combine" || choice === "forage") return { key: choice, why: "chosen" };
+  if (basis === "dry") return { key: "forage", why: "auto: dry basis" };
+  if (cropKey === "Corn silage") return { key: "forage", why: "auto: corn silage" };
+  return { key: "combine", why: "auto: wet basis" };
+}
+// Names shown by the platform for each logged / total quantity (DPD designators, max 32 chars).
+const ISOXML_ROLE_NAME = { yield:"Yield per area", moisture:"Current moisture", speed:"Driving speed",
+  swath:"Current working width", refmoist:"Reference moisture", workstate:"Current workstate",
+  avgyield:"Average yield mass per area", avgdry:"Average dry yield mass per area", avgmoist:"Average moisture" };
+// Editor display unit -> unit text written in the value presentation (DVP).
+const ISOXML_UNIT_SYMBOL = { "lbs/ac":"lb/ac", "mph":"mi/h" };
+function isoxmlUnitSymbol(u){ return Object.prototype.hasOwnProperty.call(ISOXML_UNIT_SYMBOL, u) ? ISOXML_UNIT_SYMBOL[u] : (u || ""); }
+
+// Crop presets: ISOXML designator, test weight (lb/bu) and a common standard moisture (%).
+const ISOXML_CROPS = {
+  "Corn (shelled)": { name:"Corn",       lb:56, moist:15.5 },
+  "Soybeans":       { name:"Soybeans",   lb:60, moist:13.0 },
+  "Wheat":          { name:"Wheat",      lb:60, moist:13.5 },
+  "Barley":         { name:"Barley",     lb:48, moist:14.5 },
+  "Oats":           { name:"Oats",       lb:32, moist:14.0 },
+  "Rye":            { name:"Rye",        lb:56, moist:14.0 },
+  "Canola":         { name:"Canola",     lb:50, moist:10.0 },
+  "Dry beans":      { name:"Dry Beans",  lb:60, moist:18.0 },
+  "Field peas":     { name:"Field Peas", lb:60, moist:14.0 },
+  "Flax":           { name:"Flax",       lb:56, moist: 9.0 },
+  "Sorghum":        { name:"Sorghum",    lb:56, moist:14.0 },
+  "Corn silage":    { name:"Corn",       lb:null, moist:null },   // wet tonnage: no test weight — use t/ha
+};
+
+/* Multipliers from the editor's display units to the ISO target unit (all ISO targets have
+   resolution 1, so the stored integer is round(value * factor)). */
+function isoxmlYieldFactor(unit, bushelLb){
+  if (unit === "bu/ac"){
+    if (!(bushelLb > 0)) throw new Error("bu/ac yield needs a test weight (lb/bu) — pick a crop or enter one.");
+    return bushelLb * ISOXML_LB_AC;
+  }
+  if (unit === "lbs/ac") return ISOXML_LB_AC;
+  if (unit === "kg/ha")  return 100;
+  if (unit === "t/ha")   return 100000;
+  throw new Error("Unsupported yield unit '" + unit + "' for ISOXML.");
+}
+function isoxmlSpeedFactor(unit){
+  if (unit === "mph")  return 447.04;
+  if (unit === "km/h") return 1000 / 3.6;
+  if (unit === "ft/s") return 304.8;
+  throw new Error("Unsupported velocity unit '" + unit + "' for ISOXML.");
+}
+function isoxmlSwathFactor(unit){
+  if (unit === "ft") return 304.8;
+  if (unit === "in") return 25.4;
+  if (unit === "m")  return 1000;
+  throw new Error("Unsupported swath unit '" + unit + "' for ISOXML.");
+}
+const ISOXML_MOISTURE_PCT_FACTOR = 10000;       // % -> ppm
+const ISOXML_MOISTURE_FRAC_FACTOR = 1e6;        // 0-1 fraction -> ppm
+
+/* Round half to even, as numpy.rint / Python round() do (keeps output identical to the Python tool). */
+function isoxmlRint(x){
+  const f = Math.floor(x), d = x - f;
+  if (d < 0.5) return f;
+  if (d > 0.5) return f + 1;
+  return (f % 2 === 0) ? f : f + 1;
+}
+
+function isoxmlEsc(s){
+  return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+// ISO 11783-10 designators are at most 32 characters.
+function isoxmlDes(s, fallback){
+  const t = String(s === undefined || s === null ? "" : s).trim() || fallback || "";
+  return Array.from(t).slice(0, 32).join("");
+}
+function isoxmlHex2(n){ return Math.max(0, Math.min(65535, n|0)).toString(16).toUpperCase().padStart(4, "0"); }
+function isoxmlIsoTime(sec){ return new Date(sec * 1000).toISOString().slice(0, 19) + "Z"; }
+function isoxmlCoord(v){
+  let s = v.toFixed(9);
+  if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
+  return s === "-0" ? "0" : s;
+}
+
+/* ---- geometry (local metric projection, good to a fraction of a percent over a field) ---- */
+function isoxmlScale(lat0){
+  const p = lat0 * Math.PI / 180;
+  return {
+    mLat: 111132.954 - 559.822 * Math.cos(2*p) + 1.175 * Math.cos(4*p),
+    mLon: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3*p) + 0.118 * Math.cos(5*p),
+  };
+}
+function isoxmlSignedArea(ring, sc){          // metres², positive = counter-clockwise
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++){
+    const xi = ring[i][0] * sc.mLon, yi = ring[i][1] * sc.mLat;
+    const xj = ring[j][0] * sc.mLon, yj = ring[j][1] * sc.mLat;
+    a += xj * yi - xi * yj;
+  }
+  return a / 2;
+}
+function isoxmlClosedRing(ring){
+  const r = ring.map(p => [p[0], p[1]]);
+  const f = r[0], l = r[r.length - 1];
+  if (f[0] !== l[0] || f[1] !== l[1]) r.push([f[0], f[1]]);
+  return r;
+}
+/* Convex hull (Andrew monotone chain). `pts` are [lon,lat]; returns a closed CCW ring. */
+function isoxmlConvexHull(pts, sc){
+  const P = pts.map(p => [p[0] * sc.mLon, p[1] * sc.mLat, p[0], p[1]])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const U = [];
+  for (const p of P){ if (!U.length || p[0] !== U[U.length-1][0] || p[1] !== U[U.length-1][1]) U.push(p); }
+  let ring = null;
+  if (U.length >= 3){
+    const cross = (o, a, b) => (a[0]-o[0]) * (b[1]-o[1]) - (a[1]-o[1]) * (b[0]-o[0]);
+    const lower = [];
+    for (const p of U){ while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop(); lower.push(p); }
+    const upper = [];
+    for (let i = U.length - 1; i >= 0; i--){ const p = U[i]; while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop(); upper.push(p); }
+    lower.pop(); upper.pop();
+    const h = lower.concat(upper);
+    if (h.length >= 3) ring = h.map(p => [p[2], p[3]]);
+  }
+  if (!ring){                                   // <3 distinct points / collinear: 1 m box around them
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of pts){ x0 = Math.min(x0,p[0]); x1 = Math.max(x1,p[0]); y0 = Math.min(y0,p[1]); y1 = Math.max(y1,p[1]); }
+    const dx = 1 / sc.mLon, dy = 1 / sc.mLat;
+    ring = [[x0-dx,y0-dy],[x1+dx,y0-dy],[x1+dx,y1+dy],[x0-dx,y1+dy]];
+  }
+  return isoxmlClosedRing(ring);
+}
+
+/* ISO 11783-10 TimeLog dates count days since 1980-01-01 (not the GPS epoch of 1980-01-06). */
+function isoxmlGpsDays(sec){ return Math.max(0, Math.min(65535, Math.floor((sec - 315532800) / 86400))); }
+function isoxmlGpsMs(sec){ const s = Math.floor(sec); return (((s % 86400) + 86400) % 86400) * 1000; }
+
+/* ---- device structure label (hash of the device structure) ----
+   Platforms key a device description on ClientNAME + structure label, so the label must change
+   whenever the structure (DDIs, scales, units) does. It is the first 7 hex digits of the SHA-1 of
+   Python's repr() of the structure, exactly as the Python converter computes it. */
+function isoxmlSha1Hex(str){
+  const bytes = new TextEncoder().encode(str);
+  const ml = bytes.length, total = (((ml + 8) >> 6) + 1) << 6;
+  const m = new Uint8Array(total); m.set(bytes); m[ml] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(total - 8, Math.floor(ml * 8 / 4294967296), false);
+  dv.setUint32(total - 4, (ml * 8) >>> 0, false);
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0;
+  const w = new Uint32Array(80), rol = (x, n) => (x << n) | (x >>> (32 - n));
+  for (let off = 0; off < total; off += 64){
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
+    for (let i = 16; i < 80; i++) w[i] = rol(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16], 1);
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let i = 0; i < 80; i++){
+      let f, k;
+      if (i < 20){ f = (b & c) | (~b & d); k = 0x5A827999; }
+      else if (i < 40){ f = b ^ c ^ d; k = 0x6ED9EBA1; }
+      else if (i < 60){ f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+      else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+      const t = (rol(a, 5) + f + e + k + w[i]) >>> 0;
+      e = d; d = c; c = rol(b, 30) >>> 0; b = a; a = t;
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0;
+  }
+  return [h0, h1, h2, h3, h4].map(v => v.toString(16).padStart(8, "0")).join("");
+}
+/* Python's repr(float): shortest round-trip digits, exponent form below 1e-4 or from 1e16 up. */
+function isoxmlPyFloat(x){
+  if (x === 0) return "0.0";
+  const neg = x < 0; if (neg) x = -x;
+  const m = /^(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(x.toExponential());
+  const digits = m[1] + (m[2] || ""), decpt = parseInt(m[3], 10) + 1, nd = digits.length;
+  let s;
+  if (decpt <= -4 || decpt > 16){
+    const e = decpt - 1, ae = Math.abs(e);
+    s = digits[0] + (nd > 1 ? "." + digits.slice(1) : "") + "e" + (e < 0 ? "-" : "+") + (ae < 10 ? "0" : "") + ae;
+  } else if (decpt <= 0) s = "0." + "0".repeat(-decpt) + digits;
+  else if (decpt >= nd) s = digits + "0".repeat(decpt - nd) + ".0";
+  else s = digits.slice(0, decpt) + "." + digits.slice(decpt);
+  return neg ? "-" + s : s;
+}
+function isoxmlStructureLabel(specs){
+  const rep = "[" + specs.map(sp =>
+    "(" + sp.ddi + ", " + isoxmlPyFloat(Number(sp.scale.toFixed(12))) + ", " + sp.dec + ", '" + sp.unit + "')").join(", ") + "]";
+  return isoxmlSha1Hex(rep).slice(0, 7);
+}
+function isoxmlAsciiHex(s){ return Array.from(s).map(c => c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")).join(""); }
+function isoxmlScaleStr(sc){                       // DVP scale: up to 9 decimals, trailing zeros dropped
+  let s = sc.toFixed(9);
+  if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
+  return s;
+}
+
+/* ---- binary TimeLog (Type 1) ----
+   Record: ms-of-day u32, days u16, north i32, east i32, position status u8 (PTN A,B,D — no PositionUp,
+   as in machine-written logs), then NumberOfDLVs u8 and (DLV index u8, value i32) pairs. */
+function isoxmlBuildTlgBinary(recs, nDlv){
+  const buf = new Uint8Array(recs.length * (16 + 5 * nDlv));
+  const dv = new DataView(buf.buffer);
+  let o = 0;
+  for (const r of recs){
+    dv.setUint32(o, isoxmlGpsMs(r.ts), true);                    o += 4;
+    dv.setUint16(o, isoxmlGpsDays(r.ts), true);                  o += 2;
+    dv.setInt32(o, isoxmlRint(r.lat * 1e7), true);               o += 4;
+    dv.setInt32(o, isoxmlRint(r.lon * 1e7), true);               o += 4;
+    dv.setUint8(o, 1);                                           o += 1;   // position status: GNSS fix
+    const idxs = Object.keys(r.dlv).map(Number).sort((a, b) => a - b);
+    dv.setUint8(o, idxs.length);                                 o += 1;
+    for (const i of idxs){
+      dv.setUint8(o, i);                                         o += 1;
+      dv.setInt32(o, r.dlv[i], true);                            o += 4;
+    }
+  }
+  return buf.slice(0, o);
+}
+function isoxmlBuildTlgHeader(ddis, detId){
+  const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<TIM A="" D="4">', '    <PTN A="" B="" D=""/>'];
+  for (const d of ddis) lines.push('    <DLV A="' + isoxmlHex2(d) + '" B="" C="' + detId + '"/>');
+  lines.push('</TIM>');
+  return lines.join("\n") + "\n";
+}
+
+/* ---- TASKDATA.XML ---- */
+function isoxmlRingXml(ring, type, indent){
+  let s = indent + '<LSG A="' + type + '">\n';
+  for (const p of ring) s += indent + '    <PNT A="2" C="' + isoxmlCoord(p[1]) + '" D="' + isoxmlCoord(p[0]) + '"/>\n';
+  return s + indent + '</LSG>\n';
+}
+
+/**
+ * Build a harvest ISOXML package.
+ * @param {object} o
+ *   points   [{lon, lat, ts (unix seconds or null), v:{yield, moisture, speed, swath}}]  raw values, display units
+ *   factors  {yield, moisture, speed, swath}  multiplier to ISO units; a role is written only if it has a factor
+ *   unitLabels {yield, speed, swath}  editor display units (e.g. "bu/ac", "mph", "ft"); written into the value presentations
+ *   machine  "combine" | "forage"  (default combine): sets the device designator and ClientNAME
+ *   fixedWidth {value, unit} or null  fixed working width (DDI 67), used only when no swath column is mapped
+ *   basis    "dry" | "wet"            (dry -> DDI 181 + 184, wet -> DDI 84)
+ *   refMoisturePct  standard moisture for the dry basis
+ *   useTimes true when points[i].ts comes from a data column (sorted + used as is);
+ *            false -> startSec + 1 s per record
+ *   startSec manual start (unix seconds) when useTimes is false
+ *   cropName, grower, farm, field, taskName
+ *   boundary {exterior:[[lon,lat]..], holes:[[[lon,lat]..]..]} or null (null -> convex hull of the data)
+ * @returns {{taskXml, tlgName, tlgHeader, tlgBin, warnings[], summary[], nRecords, areaM2, boundarySource}}
+ */
+function isoxmlBuild(o){
+  const warnings = [], summary = [];
+  const INT_MAX = 2147483647, INT_MIN = -2147483648;
+  const crop = (o.cropName || "").trim();
+  if (!crop) throw new Error("Choose the crop — platforms such as John Deere Operations Center need it to turn mass yield into bu/ac.");
+  const dry = o.basis === "dry";
+  if (dry && !(o.refMoisturePct > 0 && o.refMoisturePct < 100)) throw new Error("Dry-yield basis needs a standard moisture between 0 and 100 %.");
+  const UL = o.unitLabels || {};
+  const machine = ISOXML_MACHINES[o.machine || "combine"];
+  if (!machine) throw new Error("Unknown machine '" + o.machine + "'.");
+
+  // Roles that are present, in DLV order.
+  const roleDefs = [
+    ["yield",    dry ? ISOXML_DDI.YIELD_DRY : ISOXML_DDI.YIELD_WET, "mg/m2"],
+    ["moisture", ISOXML_DDI.MOISTURE, "ppm"],
+    ["speed",    ISOXML_DDI.SPEED,    "mm/s"],
+    ["swath",    ISOXML_DDI.SWATH,    "mm"],
+  ];
+  const active = roleDefs.filter(r => o.factors[r[0]] !== undefined && o.factors[r[0]] !== null);
+  if (!active.length) throw new Error("Nothing to write: no yield, moisture, velocity or swath column is mapped.");
+
+  // One spec per DDI the device describes (DPD + DVP). Logged specs come first, in DLV order; the
+  // task-level averages are described but not logged. scale = display value per ISO unit.
+  const specs = [];
+  const addSpec = (ddi, role, scale, dec, unit, logged) =>
+    specs.push({ ddi, role, scale, dec, unit, logged, name: ISOXML_ROLE_NAME[role] || role });
+  active.forEach(r => {
+    const role = r[0];
+    if (role === "moisture") addSpec(r[1], role, 1e-4, 1, "%", true);          // ppm -> %
+    else addSpec(r[1], role, 1 / o.factors[role], 1, isoxmlUnitSymbol(UL[role]), true);
+  });
+  const roleIdx = {}; active.forEach((r, k) => { roleIdx[r[0]] = k; });
+
+  // Convert each role once; anything that is not a usable number is LEFT OUT of the record (never written as 0).
+  const pts = o.points, n = pts.length;
+  const stats = active.map(() => ({ bad:0, neg:0, over:0, ok:0, rawMin:Infinity, rawMax:-Infinity, tMin:Infinity, tMax:-Infinity, rel:[] }));
+  const vals = active.map(() => new Array(n)), ok = active.map(() => new Uint8Array(n));
+  // Optional dry -> wet conversion using EACH record's own (processed) moisture:
+  //   wet = dry * (1 - reportedMoisture) / (1 - recordMoisture)
+  let yieldRaw = null;
+  if (o.dryToWet){
+    if (o.factors.moisture === undefined || o.factors.moisture === null) throw new Error("Converting dry yield to wet mass needs a moisture column — map one on the Import tab.");
+    const std = o.dryToWet.stdPct / 100;
+    if (!(std > 0 && std < 1)) throw new Error("Enter the moisture (0-100 %) the dry yield is reported at.");
+    let skipped = 0;
+    yieldRaw = pts.map(p => {
+      const y = p.v.yield; if (typeof y !== "number" || !isFinite(y)) return NaN;
+      const m = p.v.moisture * o.factors.moisture / 1e6;
+      if (!(isFinite(m) && m >= 0 && m < 0.95)){ skipped++; return NaN; }
+      return y * (1 - std) / (1 - m);
+    });
+    if (skipped) warnings.push("yield: " + skipped + " records had no usable moisture, so their yield could not be converted to wet mass and was left out.");
+    summary.push("yield: dry values (reported at " + o.dryToWet.stdPct + "%) converted to wet mass with each record's processed moisture");
+  }
+  active.forEach((r, k) => {
+    const role = r[0], f = o.factors[role], st = stats[k];
+    for (let i = 0; i < n; i++){
+      const raw = (role === "yield" && yieldRaw) ? yieldRaw[i] : pts[i].v[role];
+      if (typeof raw !== "number" || !isFinite(raw)){ st.bad++; continue; }
+      const t = raw * f;
+      if (t < 0 && role !== "speed"){ st.neg++; continue; }
+      if (t > INT_MAX || t < INT_MIN){ st.over++; continue; }
+      const iv = isoxmlRint(t);
+      vals[k][i] = iv; ok[k][i] = 1; st.ok++;
+      if (raw < st.rawMin) st.rawMin = raw; if (raw > st.rawMax) st.rawMax = raw;
+      if (t < st.tMin) st.tMin = t; if (t > st.tMax) st.tMax = t;
+      if (t !== 0 && st.rel.length < 20000) st.rel.push(Math.abs(iv - t) / Math.abs(t));
+    }
+    const nm = role + " (DDI " + r[1] + ")";
+    if (st.bad)  warnings.push(nm + ": " + st.bad + " of " + n + " values were empty/non-numeric and were left out of the log.");
+    if (st.neg)  warnings.push(nm + ": " + st.neg + " negative values were left out of the log.");
+    if (st.over) warnings.push(nm + ": " + st.over + " values overflowed the ISO 32-bit range and were left out (wrong unit?).");
+    if (st.rel.length){
+      st.rel.sort((a, b) => a - b);
+      const med = st.rel[st.rel.length >> 1];
+      if (med > 0.01) warnings.push(nm + ": ISO resolution is 1 " + r[2] + ", so values lose ~" + (100*med).toFixed(1) + "% precision when rounded.");
+    }
+    if (st.ok) summary.push(role + ": " + st.rawMin.toPrecision(4) + ".." + st.rawMax.toPrecision(4) + " (as displayed)  ->  " +
+      st.tMin.toPrecision(6) + ".." + st.tMax.toPrecision(6) + " " + r[2]);
+  });
+
+  // Constant-valued DLVs written with each record: {idx, value, requires} — `requires` is the active-role
+  // index whose value must be present for the record (-1 = any mapped value is present).
+  const yi = roleIdx.yield === undefined ? -1 : roleIdx.yield;
+  const extras = [];
+  // DDI 184: the reference moisture that defines "dry" for DDI 181.
+  if (dry && yi >= 0){
+    const refPpm = isoxmlRint(o.refMoisturePct * 10000);
+    extras.push({ idx: specs.length, value: refPpm, requires: yi });
+    addSpec(ISOXML_DDI.REF_MOIST, "refmoist", 1e-4, 1, "%", true);
+    summary.push("yield basis: dry mass (DDI 181) at " + o.refMoisturePct + "% reference moisture (DDI 184 = " + refPpm + " ppm)");
+  }
+  // Working width: a fixed value when no swath column is mapped.
+  const fw = o.fixedWidth;
+  if (fw && fw.value > 0 && roleIdx.swath === undefined){
+    const wf = isoxmlSwathFactor(fw.unit), wmm = isoxmlRint(fw.value * wf);
+    if (!(wmm > 0 && wmm <= INT_MAX)) throw new Error("Fixed working width must be greater than 0.");
+    extras.push({ idx: specs.length, value: wmm, requires: -1 });
+    addSpec(ISOXML_DDI.SWATH, "swath", 1 / wf, 1, isoxmlUnitSymbol(fw.unit), true);
+    summary.push("swath: fixed " + fw.value + " " + fw.unit + " -> " + wmm + " mm");
+  }
+  // Work state (DDI 141 = on): real machines log it with every record.
+  extras.push({ idx: specs.length, value: 1, requires: -1 });
+  addSpec(ISOXML_DDI.WORK_STATE, "workstate", 1, 0, "", true);
+  const logged = specs.filter(s => s.logged).map(s => s.ddi);
+
+  // Record order and time stamps.
+  let order = [];
+  for (let i = 0; i < n; i++) order.push(i);
+  if (o.useTimes){
+    const good = order.filter(i => typeof pts[i].ts === "number" && isFinite(pts[i].ts));
+    if (!good.length) throw new Error("Could not read any date/time from the Timestamp column. Unmap it to use the manual date/time instead.");
+    if (good.length < n) warnings.push((n - good.length) + " rows had an unreadable timestamp and were skipped.");
+    order = good.sort((a, b) => pts[a].ts - pts[b].ts || a - b);   // stable chronological order
+  }
+
+  const recs = [];
+  const startSec = Math.floor(o.startSec);
+  const sumV = active.map(() => 0), cntV = active.map(() => 0);   // for the task-level averages
+  for (const i of order){
+    const p = pts[i];
+    if (!isFinite(p.lon) || !isFinite(p.lat)) continue;
+    const dlv = {};
+    let any = false;
+    for (let k = 0; k < active.length; k++) if (ok[k][i]){ dlv[k] = vals[k][i]; any = true; }
+    if (!any) continue;
+    for (const e of extras) if (e.requires < 0 || ok[e.requires][i]) dlv[e.idx] = e.value;
+    for (let k = 0; k < active.length; k++) if (ok[k][i]){ sumV[k] += vals[k][i]; cntV[k]++; }
+    recs.push({ lat:p.lat, lon:p.lon, ts: o.useTimes ? Math.floor(p.ts) : startSec + recs.length, dlv });
+  }
+  if (!recs.length) throw new Error("No usable records: every mapped value was empty or invalid.");
+  const tStart = recs[0].ts, tStop = recs[recs.length - 1].ts;
+  summary.push("time: " + isoxmlIsoTime(tStart) + " .. " + isoxmlIsoTime(tStop) + (o.useTimes ? " (naive timestamps read as UTC)" : " (manual start, 1 s per point)"));
+
+  // Task-level averages (written in the Task's Time element), described but not logged.
+  const totals = [];
+  if (yi >= 0 && cntV[yi]){
+    const ys = specs[yi], d = ys.ddi === ISOXML_DDI.YIELD_DRY;
+    const ddi = d ? ISOXML_DDI.AVG_YIELD_DRY : ISOXML_DDI.AVG_YIELD;
+    addSpec(ddi, d ? "avgdry" : "avgyield", ys.scale, ys.dec, ys.unit, false);
+    totals.push([ddi, isoxmlRint(sumV[yi] / cntV[yi])]);
+  }
+  if (roleIdx.moisture !== undefined && cntV[roleIdx.moisture]){
+    const mi = roleIdx.moisture, ms = specs[mi];
+    addSpec(ISOXML_DDI.AVG_MOISTURE, "avgmoist", ms.scale, ms.dec, ms.unit, false);
+    totals.push([ISOXML_DDI.AVG_MOISTURE, isoxmlRint(sumV[mi] / cntV[mi])]);
+  }
+
+  summary.push("machine: " + machine.label + " (ClientNAME " + isoxmlClientName(machine.cls, machine.ident) + ")");
+  const tlgBin = isoxmlBuildTlgBinary(recs, logged.length);
+  const tlgName = "TLG00001";
+  const DET = "DET-1";
+  const tlgHeader = isoxmlBuildTlgHeader(logged, DET);
+
+  // Field boundary: the imported boundary if there is one, otherwise the convex hull of the data.
+  const lat0 = recs.reduce((s, r) => s + r.lat, 0) / recs.length;
+  const sc = isoxmlScale(lat0);
+  let ext, holes = [], boundarySource;
+  if (o.boundary && o.boundary.exterior && o.boundary.exterior.length >= 3){
+    ext = isoxmlClosedRing(o.boundary.exterior);
+    holes = (o.boundary.holes || []).filter(h => h && h.length >= 3).map(isoxmlClosedRing);
+    boundarySource = "imported boundary";
+  } else {
+    ext = isoxmlConvexHull(recs.map(r => [r.lon, r.lat]), sc);
+    boundarySource = "convex hull of the data points";
+  }
+  if (isoxmlSignedArea(ext, sc) < 0) ext.reverse();                 // exterior counter-clockwise
+  holes = holes.map(h => isoxmlSignedArea(h, sc) > 0 ? h.slice().reverse() : h);  // holes clockwise
+  let areaM2 = Math.abs(isoxmlSignedArea(ext, sc));
+  for (const h of holes) areaM2 -= Math.abs(isoxmlSignedArea(h, sc));
+  areaM2 = Math.max(0, Math.round(areaM2));
+  summary.push(o.includeBoundary === false
+    ? "field boundary: NOT written (field record only; area " + (areaM2 / 10000).toFixed(2) + " ha from the " + boundarySource + ")"
+    : "field boundary: " + boundarySource + ", " + (areaM2 / 10000).toFixed(2) + " ha (" + (areaM2 / ISOXML_AC_M2).toFixed(2) + " ac)");
+
+  const grower = isoxmlDes(o.grower, "Grower"), farm = isoxmlDes(o.farm, "Farm"), field = isoxmlDes(o.field, "Field");
+  const taskName = isoxmlDes(o.taskName, "Harvest - " + field);
+  const cropDes = isoxmlDes(crop);
+  const tStartS = isoxmlIsoTime(tStart), tStopS = isoxmlIsoTime(tStop);
+  const stampXml = '<ASP A="' + tStartS + '" B="' + tStopS + '" D="4"/>';   // effective / realized
+  const CLIENT_NAME = isoxmlClientName(machine.cls, machine.ident);
+
+  const x = [];
+  x.push('<?xml version="1.0" encoding="UTF-8"?>');
+  x.push('<ISO11783_TaskData VersionMajor="4" VersionMinor="1" ManagementSoftwareManufacturer="' + isoxmlEsc(ISOXML_SW_NAME) +
+         '" ManagementSoftwareVersion="' + isoxmlEsc(ISOXML_SW_VERSION) + '" DataTransferOrigin="2">');
+  x.push('    <CTP A="CTP-1" B="' + isoxmlEsc(cropDes) + '"/>');
+  x.push('    <CTR A="CTR-1" B="' + isoxmlEsc(grower) + '"/>');
+  x.push('    <DVC A="DVC-1" B="' + isoxmlEsc(machine.label) + '" C="' + isoxmlEsc(ISOXML_SW_VERSION) + '" D="' + CLIENT_NAME + '" F="' +
+         isoxmlAsciiHex(isoxmlStructureLabel(specs)) + '" G="FFFFFFFFFFFFFF">');
+  x.push('        <DET A="' + DET + '" B="1" C="1" D="' + isoxmlEsc(machine.label) + '" E="1" F="0">');
+  specs.forEach((s, k) => x.push('            <DOR A="' + (10000 + k) + '"/>'));
+  x.push('        </DET>');
+  specs.forEach((s, k) => x.push('        <DPD A="' + (10000 + k) + '" B="' + isoxmlHex2(s.ddi) + '" C="0" D="0" E="' +
+         isoxmlEsc(s.name.slice(0, 32)) + '" F="' + (1000 + k) + '"/>'));
+  specs.forEach((s, k) => x.push('        <DVP A="' + (1000 + k) + '" B="0" C="' + isoxmlScaleStr(s.scale) + '" D="' + s.dec + '"' +
+         (s.unit ? ' E="' + isoxmlEsc(s.unit) + '"' : '') + '/>'));
+  x.push('    </DVC>');
+  x.push('    <FRM A="FRM-1" B="' + isoxmlEsc(farm) + '" I="CTR-1"/>');
+  const withBoundary = o.includeBoundary !== false;
+  if (withBoundary){
+    let pfd = '    <PFD A="PFD-1" C="' + isoxmlEsc(field) + '" D="' + areaM2 + '" F="FRM-1" G="CTP-1">\n' +
+              '        <PLN A="1" C="' + areaM2 + '">\n' + isoxmlRingXml(ext, 1, '            ');
+    for (const h of holes) pfd += isoxmlRingXml(h, 2, '            ');
+    pfd += '        </PLN>\n    </PFD>';
+    x.push(pfd);
+  } else {      // field record only: no boundary polygon is written
+    x.push('    <PFD A="PFD-1" C="' + isoxmlEsc(field) + '" D="' + areaM2 + '" F="FRM-1" G="CTP-1"/>');
+  }
+  x.push('    <PDT A="PDT-1" B="' + isoxmlEsc(cropDes) + '" C="PGP-1" F="1"/>');
+  x.push('    <PGP A="PGP-1" B="' + isoxmlEsc(cropDes) + '" C="2"/>');
+  x.push('    <TSK A="TSK-1" B="' + isoxmlEsc(taskName) + '" C="CTR-1" D="FRM-1" E="PFD-1" G="4">');
+  const timOpen = '        <TIM A="' + tStartS + '" B="' + tStopS + '" C="' + Math.max(0, tStop - tStart) + '" D="4"';
+  if (totals.length){
+    x.push(timOpen + '>');
+    for (const t of totals) x.push('            <DLV A="' + isoxmlHex2(t[0]) + '" B="' + t[1] + '" C="' + DET + '"/>');
+    x.push('        </TIM>');
+  } else x.push(timOpen + '/>');
+  x.push('        <DAN A="' + CLIENT_NAME + '" C="DVC-1">');
+  x.push('            ' + stampXml);
+  x.push('        </DAN>');
+  x.push('        <PAN A="PDT-1">');
+  x.push('            ' + stampXml);
+  x.push('        </PAN>');
+  x.push('        <TLG A="' + tlgName + '" C="1"/>');
+  x.push('    </TSK>');
+  x.push('</ISO11783_TaskData>');
+
+  return { taskXml: x.join("\n") + "\n", tlgName, tlgHeader, tlgBin, warnings, summary, nRecords: recs.length, areaM2, boundarySource };
+}
+
+/* Timestamp -> unix seconds for ISOXML. Strings carrying no time-zone designator are read as UTC
+   (as the shapefile converter does); numbers may be epoch seconds or milliseconds. */
+function isoxmlParseTs(v){
+  if (v === undefined || v === null || v === "") return NaN;
+  if (typeof v === "number") return !isFinite(v) ? NaN : (v > 1e12 ? v / 1000 : (v > 1e8 ? v : NaN));
+  const s = String(v).trim();
+  if (/^-?\d+(\.\d+)?$/.test(s)){ const q = parseFloat(s); return q > 1e12 ? q / 1000 : (q > 1e8 ? q : NaN); }
+  const t = Date.parse(s);
+  if (isNaN(t)) return NaN;
+  if (/(Z|[+-]\d{2}:?\d{2}|\bGMT|\bUTC)\s*$/i.test(s)) return t / 1000;
+  const d = new Date(t);        // naive: Date read it as local time, so re-read those same fields as UTC
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()) / 1000;
+}
+
+/* ---------------------------------------------------------------
+   ISOXML export — Export-tab wiring (BETA)
+   --------------------------------------------------------------- */
+(function initIsoxmlCropSelect(){
+  const sel = document.getElementById("isoCrop");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— choose crop —</option>' +
+    Object.keys(ISOXML_CROPS).map(k => '<option value="' + k + '">' + k + '</option>').join("") +
+    '<option value="__custom">Other (type a name)…</option>';
+  sel.addEventListener("change", () => {
+    const c = ISOXML_CROPS[sel.value];
+    document.getElementById("isoCropCustomWrap").style.display = sel.value === "__custom" ? "" : "none";
+    if (c){     // a crop without a test weight / standard moisture (corn silage) clears the stale values
+      document.getElementById("isoBushel").value = c.lb || "";
+      document.getElementById("isoRefMoist").value = c.moist || "";
+    }
+  });
+  document.getElementById("isoBasis").addEventListener("change", syncIsoxmlBasis);
+  document.getElementById("isoFixedWidthUnit").addEventListener("change", e => { e.target.dataset.touched = "1"; });
+  ["isoMachine", "isoBasis", "isoCrop"].forEach(id => document.getElementById(id).addEventListener("change", refreshIsoxmlMachineHint));
+  document.getElementById("isoYieldSrc").addEventListener("change", syncIsoxmlBasis);
+  const d = new Date(), p2 = n => String(n).padStart(2, "0");
+  document.getElementById("isoDate").value = d.getFullYear() + "-" + p2(d.getMonth()+1) + "-" + p2(d.getDate());
+  document.getElementById("isoTime").value = "08:00";
+})();
+function syncIsoxmlBasis(){
+  const dry = document.getElementById("isoBasis").value === "dry";
+  document.getElementById("isoRefMoistLbl").textContent = dry
+    ? "Standard moisture (%) — written as DDI 184 to define “dry”; use your buyer’s value"
+    : "Moisture the dry yield is reported at (%) — only used to convert dry yield to wet mass; not written to the file";
+  const wetSrc = document.getElementById("isoYieldSrc").value === "yield_wet_clean";
+  document.getElementById("isoRefMoistWrap").style.display = (dry || !wetSrc) ? "" : "none";
+}
+function isoxmlSelectedMachine(){
+  return isoxmlResolveMachine(document.getElementById("isoMachine").value, document.getElementById("isoBasis").value,
+                              document.getElementById("isoCrop").value);
+}
+function refreshIsoxmlMachineHint(){
+  const m = isoxmlSelectedMachine(), mc = ISOXML_MACHINES[m.key];
+  document.getElementById("isoMachineHint").textContent = "Will be written as: " + mc.label + " (" + m.why + "; ClientNAME " +
+    isoxmlClientName(mc.cls, mc.ident) + "). Pick Combine or Forage above to override.";
+}
+// Called after data/mapping/boundary changes so the section reflects what will actually be written.
+function refreshIsoxmlUI(){
+  const src = document.getElementById("isoYieldSrc");
+  if (!src) return;
+  const sample = S.filteredRows[0];
+  const opts = [];
+  if (sample && sample.yield_dry_clean !== undefined) opts.push(["yield_dry_clean", "Dry/Processed yield (cleaned)"]);
+  if (sample && sample.yield_wet_clean !== undefined) opts.push(["yield_wet_clean", "Wet/Unprocessed yield (cleaned)"]);
+  const prev = src.value;
+  src.innerHTML = opts.length ? opts.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join("")
+                              : '<option value="">(no yield column mapped / data not filtered yet)</option>';
+  if (opts.some(o => o[0] === prev)) src.value = prev;
+  const hasTs = !!S.mapping.timestamp;
+  document.getElementById("isoTimeHint").textContent = hasTs
+    ? "Record times come from the mapped Timestamp column (“" + S.mapping.timestamp + "”); a timestamp with no time zone is read as UTC. The manual date/time below is ignored."
+    : "No Timestamp column is mapped, so records are stamped from this start date/time (your local time), 1 second apart.";
+  document.getElementById("isoManualTime").style.display = hasTs ? "none" : "";
+  // A fixed working width is only used when there is no Swath column; default its unit to the swath unit.
+  document.getElementById("isoFixedWidthRow").style.display = S.mapping.swath ? "none" : "";
+  const fwu = document.getElementById("isoFixedWidthUnit");
+  if (!fwu.dataset.touched && ["ft", "m", "in"].includes(S.units.swath)) fwu.value = S.units.swath;
+  document.getElementById("isoBoundaryHint").textContent = !document.getElementById("isoIncludeBoundary").checked
+    ? "No boundary polygon will be written; the platform gets the field name and area only."
+    : S.boundary
+    ? "Field boundary: your imported boundary will be written to the ISOXML field."
+    : "Field boundary: none imported, so the convex hull of the data points will be used. Import a boundary on the Boundary tab for an accurate outline and area.";
+  const u = S.units;
+  document.getElementById("isoUnitHint").textContent = "Values are converted from the units set on the Import tab (yield " + u.yield + ", velocity " + u.velocity + ", swath " + u.swath + ", moisture %).";
+  syncIsoxmlBasis();
+  refreshIsoxmlMachineHint();
+}
+document.getElementById("isoIncludeBoundary").addEventListener("change", refreshIsoxmlUI);
+document.querySelectorAll('.tabbtn[data-tab="export"]').forEach(b => b.addEventListener("click", refreshIsoxmlUI));
+
+function isoxmlBoundaryFromGeoJSON(fc){
+  if (!fc) return null;
+  const feats = fc.type === "FeatureCollection" ? fc.features : [fc];
+  const polys = [];
+  for (const f of feats){
+    const g = f && (f.geometry || f);
+    if (!g) continue;
+    if (g.type === "Polygon") polys.push(g.coordinates);
+    else if (g.type === "MultiPolygon") for (const p of g.coordinates) polys.push(p);
+  }
+  if (!polys.length) return null;
+  let best = null, bestA = -1;
+  for (const rings of polys){
+    if (!rings.length || rings[0].length < 4) continue;
+    const sc = isoxmlScale(rings[0][0][1]);
+    const a = Math.abs(isoxmlSignedArea(rings[0], sc));
+    if (a > bestA){ bestA = a; best = rings; }
+  }
+  if (!best) return null;
+  const strip = r => r.map(p => [p[0], p[1]]);
+  return { exterior: strip(best[0]), holes: best.slice(1).map(strip) };
+}
+
+document.getElementById("btnExportIsoxml").addEventListener("click", async () => {
+  const logEl = document.getElementById("isoLog");
+  logEl.style.display = "none";
+  try {
+    if (!requireData()) return;
+    const M = S.mapping, { lon, lat } = M;
+    const yCol = document.getElementById("isoYieldSrc").value;
+    if (!yCol){ toast("No yield column available — map a yield column and run Filters first.", true); return; }
+    const cropSel = document.getElementById("isoCrop").value;
+    let cropName = "";
+    if (cropSel === "__custom") cropName = document.getElementById("isoCropCustom").value.trim();
+    else if (ISOXML_CROPS[cropSel]) cropName = ISOXML_CROPS[cropSel].name;
+    if (!cropName){ toast("Choose the crop first — ISOXML platforms need it to read yield as bu/ac.", true); return; }
+    const bushel = parseFloat(document.getElementById("isoBushel").value);
+    const basis = document.getElementById("isoBasis").value;
+    const refPct = parseFloat(document.getElementById("isoRefMoist").value);
+    const dryToWet = (basis === "wet" && yCol === "yield_dry_clean") ? { stdPct: refPct } : null;
+
+    const sample = S.filteredRows[0];
+    const mCol = sample.moisture_clean !== undefined ? "moisture_clean" : (M.moisture || null);
+    const hasTs = !!M.timestamp;
+    const num = v => { const x = typeof v === "number" ? v : parseFloat(v); return isFinite(x) ? x : NaN; };
+
+    const points = S.filteredRows.map(r => ({
+      lon: num(r[lon]), lat: num(r[lat]),
+      ts: hasTs ? isoxmlParseTs(r[M.timestamp]) : null,
+      v: { yield: num(r[yCol]),
+           moisture: mCol ? num(r[mCol]) : NaN,
+           speed: M.velocity ? num(r[M.velocity]) : NaN,
+           swath: M.swath ? num(r[M.swath]) : NaN },
+    }));
+
+    // Moisture is expected in % (0-100); a column that is plainly a 0-1 fraction is detected.
+    let mFactor = ISOXML_MOISTURE_PCT_FACTOR, fracNote = null;
+    if (mCol){
+      let mx = 0; for (const p of points) if (isFinite(p.v.moisture) && p.v.moisture > mx) mx = p.v.moisture;
+      if (mx > 0 && mx <= 1){ mFactor = ISOXML_MOISTURE_FRAC_FACTOR; fracNote = "Moisture values are all ≤ 1, so they were read as a 0–1 fraction rather than a percent."; }
+    }
+    const factors = { yield: isoxmlYieldFactor(S.units.yield, bushel) };
+    if (mCol) factors.moisture = mFactor;
+    if (M.velocity) factors.speed = isoxmlSpeedFactor(S.units.velocity);
+    if (M.swath) factors.swath = isoxmlSwathFactor(S.units.swath);
+
+    let startSec = 0;
+    if (!hasTs){
+      const dv = document.getElementById("isoDate").value, tv = document.getElementById("isoTime").value || "08:00";
+      const t = dv ? new Date(dv + "T" + tv + ":00").getTime() : NaN;
+      startSec = isFinite(t) ? t / 1000 : Date.now() / 1000;
+    }
+
+    const machineSel = isoxmlResolveMachine(document.getElementById("isoMachine").value, basis, cropSel);
+    const fwVal = parseFloat(document.getElementById("isoFixedWidth").value);
+    const fixedWidth = (!M.swath && fwVal > 0) ? { value: fwVal, unit: document.getElementById("isoFixedWidthUnit").value } : null;
+
+    const field = document.getElementById("isoField").value.trim() || baseName();
+    const res = isoxmlBuild({
+      points, factors, basis, refMoisturePct: refPct, dryToWet, useTimes: hasTs, startSec,
+      unitLabels: { yield: S.units.yield, speed: S.units.velocity, swath: S.units.swath }, fixedWidth,
+      machine: machineSel.key,
+      cropName,
+      grower: document.getElementById("isoGrower").value, farm: document.getElementById("isoFarm").value, field,
+      taskName: document.getElementById("isoTask").value.trim() || "Harvest",
+      includeBoundary: document.getElementById("isoIncludeBoundary").checked,
+      boundary: isoxmlBoundaryFromGeoJSON(S.boundary),
+    });
+    if (fracNote) res.warnings.unshift(fracNote);
+
+    // Packaged exactly like the shapefile converter's zip: files stored uncompressed, no folder entry.
+    const zip = new JSZip(), zo = { createFolders: false };
+    zip.file("TASKDATA/TASKDATA.XML", res.taskXml, zo);
+    zip.file("TASKDATA/" + res.tlgName + ".bin", res.tlgBin, zo);
+    zip.file("TASKDATA/" + res.tlgName + ".xml", res.tlgHeader, zo);
+    const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+    downloadBlob(blob, baseName() + "_ISOXML.zip", "application/zip");
+
+    const mSrcNote = mCol ? "moisture: per-record values from the processed column (" + mCol + (mCol === "moisture_clean" ? ", i.e. after balancing/delay" : "") + ")" : "moisture: no moisture column mapped — not written";
+    logEl.textContent = ["Wrote " + res.nRecords.toLocaleString() + " records (beta ISOXML).", mSrcNote, ...res.summary.map(l => l.startsWith("machine: ") ? l + " [" + machineSel.why + "]" : l), ...res.warnings.map(w => "⚠ " + w)].join("\n");
+    logEl.style.display = "block";
+    toast("Exported ISOXML (.zip, beta) — " + res.nRecords.toLocaleString() + " records" + (res.warnings.length ? " · " + res.warnings.length + " warning(s), see Export tab" : ""));
+  } catch (err){
+    toast("ISOXML export failed: " + err.message, true);
+    logEl.textContent = "ISOXML export failed: " + err.message; logEl.style.display = "block";
+  }
+});
 
 /* ---------------------------------------------------------------
    GeoTIFF export (multi-band, clipped to boundary)
