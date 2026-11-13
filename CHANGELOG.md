@@ -5,7 +5,6 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 ## [2026-11-01]
 
 ### Added
-- ISOXML export support - beta
 - point exports also have option to use interpolation to replace "error" points with cleaned yield.  Goal is to create continuous maps that do not have disjointed gaps due to the cleaning process and are still realistic for field patterns.
   
 ## [2026-10-15]
