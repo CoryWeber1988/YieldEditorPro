@@ -697,10 +697,15 @@ details.adv[open] > summary{color:var(--accent2);}
               <span><b>Simplified</b> — only the cleaned wet/dry/moisture values, written back under their <i>original</i> column names; every other source column is left out. Smallest file, but it will not satisfy platforms that need the full original column set.</span>
             </label>
           </div>
-          <div class="hint">Applies to GeoJSON, Shapefile, and CSV point-data exports below. AgLeader Text always uses its own fixed field schema.</div>
+          <div class="hint">Applies to GeoJSON, Shapefile, and CSV point-data exports below. AgLeader Text always uses its own fixed field schema. The <b>interpolated gap-fill</b> option below is only available with Streamlined or Simplified.</div>
         </div>
         <div class="section">
           <h3>Point data</h3>
+          <label class="chk-line">
+            <input type="checkbox" id="exportGapFill" disabled>
+            <span><b>Include interpolated points to fill gaps</b> (GeoJSON, Shapefile, CSV) — for re-uploading to online platforms, which otherwise show filtered-out areas as having no yield data. The source file's own points that were removed are restored with all their original attributes and given cleaned yield/moisture values interpolated (IDW) from the cleaned points. Restored points outside the boundary, or physically overlapping an earlier point, are left out. The GeoTIFF is not included.</span>
+          </label>
+          <div class="hint" id="exportGapFillHint" style="margin-top:-4px; margin-bottom:8px;"></div>
           <div class="btn-row">
             <button class="btn" id="btnExportGeojson">GeoJSON</button>
             <button class="btn" id="btnExportShapefile">Shapefile (.zip)</button>
@@ -835,6 +840,7 @@ details.adv[open] > summary{color:var(--accent2);}
         <div class="section help-block">
           <h3>Export &amp; Summary</h3>
           <p>CSV, GeoJSON, and Shapefile exports respect the <b>Column set</b> choice at the top of the Export tab. <b>Full</b> (the previous default behaviour) includes every original column plus whichever cleaned columns exist — wherever balancing or Post-Cal produced a <code>yield_balanced</code> column, and wherever <code>yield_dry_clean</code>/<code>yield_wet_clean</code>/<code>moisture_clean</code> exist, they're included alongside the original columns. <b>Streamlined</b> exports the source file's own columns — same names, same order — with the cleaned wet/dry/moisture values written in place of the raw ones, and adds no <code>_clean</code>-suffixed or <code>yield_balanced</code> columns. Use it when another FMIS platform needs to recognise the file as a normal yield export. <b>Simplified</b> exports only the cleaned wet/dry/moisture values under their <i>original</i> column names (plus position in GeoJSON/Shapefile geometry) and drops every other source column, giving the smallest file; it will not be recognised by platforms that require the full original column set. AgLeader Text export always uses its own fixed field schema regardless of this setting, and prefers an actual mapped Wet/Unprocessed Yield value for its Grain_Flow_lbs_sec field over back-calculating one from the per-acre Dry figure, when one is available. The Summary tab captures the source file, column mapping (including which yield column is primary), every pipeline stage's record count, all balancing and calibration factors, boundary status, and any GeoTIFF exports made in the session (including which interpolation method each used) — downloadable as Markdown or a standalone HTML file.</p>
+          <p><b>Interpolated gap fill.</b> Filtering removes points, and online platforms then draw those areas as having no yield data (they only interpolate the points they are given). Tick <b>Include interpolated points to fill gaps</b> in the Point data section to avoid that in the GeoJSON, Shapefile and CSV exports. It needs a <b>boundary</b> and the <b>Streamlined</b> or <b>Simplified</b> column set (not Full). The source file's points that did not survive the pipeline are restored with every original attribute, and their cleaned wet/dry yield and moisture values are interpolated (inverse-distance weighting) from the cleaned points. Points outside the boundary are dropped, and so is any restored point that physically overlaps an earlier one: candidates are taken in time order (file order without timestamps), and one closer than half the typical point spacing to a point already in the output is skipped. Points that survived filtering are never dropped. No GeoTIFF is added — export that separately.</p>
           <p><b>Shapefile metadata.</b> Shapefile exports include <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, <code>.prj</code> and <code>.cpg</code>. Some FMIS platforms only accept a yield shapefile if its <code>.json</code> metadata file (such as John Deere's <code>-Metadata.json</code>) travels with it under a matching name. When a .json file came in with your source shapefile (inside the .zip, or selected alongside loose files), the Shapefile export asks whether to copy it into the export .zip and renames it to the new base name, keeping any suffix such as <code>-Metadata</code>. The file's contents are copied unchanged. If the source had no metadata file selected, or the export is for a different source type, copy and rename it manually.</p>
         </div>
 
@@ -1691,6 +1697,67 @@ function featureAreaM2(feature){
   return areaDeg2 * mPerDegLat * mPerDegLon;
 }
 
+/** Simple spatial hash for points in a local metric (x,y) space. Used by the
+ *  interpolated-gap-fill export for nearest-neighbour lookups and overlap tests. */
+function makePointIndex(cell){
+  const map = new Map();
+  const OFF = 2097152, MUL = 4194304;
+  const cx = v => Math.floor(v / cell);
+  const key = (ix, iy) => (ix + OFF) * MUL + (iy + OFF);
+  return {
+    cell,
+    add(x, y, id){
+      const k = key(cx(x), cx(y));
+      let a = map.get(k);
+      if (!a){ a = []; map.set(k, a); }
+      a.push(x, y, id);
+    },
+    /** true if any stored point lies closer than r (requires r <= cell) */
+    anyWithin(x, y, r){
+      const ix0 = cx(x), iy0 = cx(y), r2 = r * r;
+      for (let dx = -1; dx <= 1; dx++){
+        for (let dy = -1; dy <= 1; dy++){
+          const a = map.get(key(ix0 + dx, iy0 + dy));
+          if (!a) continue;
+          for (let i = 0; i < a.length; i += 3){
+            const ddx = a[i] - x, ddy = a[i + 1] - y;
+            if (ddx * ddx + ddy * ddy < r2) return true;
+          }
+        }
+      }
+      return false;
+    },
+    /** k nearest stored points as [[dist², id], ...] ascending */
+    knn(x, y, k, maxRing){
+      const ix0 = cx(x), iy0 = cx(y);
+      let cand = [];
+      const lastRing = maxRing || 60;
+      for (let R = 0; R <= lastRing; R++){
+        for (let dx = -R; dx <= R; dx++){
+          for (let dy = -R; dy <= R; dy++){
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== R) continue;
+            const a = map.get(key(ix0 + dx, iy0 + dy));
+            if (!a) continue;
+            for (let i = 0; i < a.length; i += 3){
+              const ddx = a[i] - x, ddy = a[i + 1] - y;
+              cand.push([ddx * ddx + ddy * ddy, a[i + 2]]);
+            }
+          }
+        }
+        if (cand.length >= k){
+          cand.sort((p, q) => p[0] - q[0]);
+          if (cand.length > k) cand.length = k;
+          const lim = R * cell;
+          if (cand[k - 1][0] <= lim * lim) break;   // nothing unscanned can be closer
+        }
+      }
+      cand.sort((p, q) => p[0] - q[0]);
+      if (cand.length > k) cand.length = k;
+      return cand;
+    },
+  };
+}
+
 /** Area-weighted centroid of a single ring (standard polygon-centroid formula). */
 function centroidOfRing(ring){
   let cx = 0, cy = 0, a = 0;
@@ -2393,7 +2460,37 @@ function krigingGrid(points, grid, opts = {}){
   return out;
 }
 
-if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid };
+/* ---------------------------------------------------------------
+   IDW evaluated at arbitrary target points (rather than a regular
+   grid) — same inverse-distance weighting as idwGrid, using the k
+   nearest source points. Coordinates are in a local metric space
+   (metres). Used to fill gaps in the point-data exports.
+   xs/ys/vs: source arrays (non-finite vs are ignored); tx/ty: targets.
+   --------------------------------------------------------------- */
+function idwAtPoints(xs, ys, vs, tx, ty, opts = {}){
+  const power = opts.power ?? 2;
+  const k = opts.k ?? 12;
+  const idx = makePointIndex(opts.cell ?? 10);
+  for (let i = 0; i < xs.length; i++){
+    const v = vs[i];
+    if (v === v && isFinite(v) && isFinite(xs[i]) && isFinite(ys[i])) idx.add(xs[i], ys[i], i);
+  }
+  const out = new Float32Array(tx.length).fill(NaN);
+  for (let t = 0; t < tx.length; t++){
+    const nb = idx.knn(tx[t], ty[t], k, opts.maxRing || 80);
+    if (!nb.length) continue;
+    let wsum = 0, vsum = 0, exact = null;
+    for (const [d2, id] of nb){
+      if (d2 < 1e-10){ exact = vs[id]; break; }
+      const w = 1 / Math.pow(d2, power / 2);
+      wsum += w; vsum += w * vs[id];
+    }
+    out[t] = exact !== null ? exact : (wsum > 0 ? vsum / wsum : NaN);
+  }
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { idwGrid, krigingGrid, idwAtPoints };
 
 </script>
 
@@ -4223,7 +4320,8 @@ applyPassToUI();
 function runPipeline({ trace=false } = {}){
   if (!S.rawRows.length) return { rows: [], trace: [] };
   const t = [];
-  let rows = S.rawRows.map(r => Object.assign({}, r)); // fresh copy each run
+  // __ri = index of the source row, so exports can tell which original points survived.
+  let rows = S.rawRows.map((r, i) => Object.assign({}, r, { __ri: i })); // fresh copy each run
   // Per-step snapshots for the Raw | Clean view: the rows that survive each
   // step plus the yield value they carry AT that step (balancing and Post-Cal
   // overwrite yield_balanced in place, so values must be captured now).
@@ -4676,6 +4774,7 @@ function setBoundary(geojson, filename){
   toast("Boundary loaded: " + filename);
 }
 function updateGeotiffButton(){
+  refreshGapFillUI();   // gap-fill export also needs the boundary
   const btn = document.getElementById("btnExportGeotiff");
   btn.disabled = !S.boundary;
   document.getElementById("geotiffHint").textContent = S.boundary
@@ -4761,7 +4860,14 @@ function buildExportData(){
     outNames = exportColumns();
     srcKeys = outNames;
   }
-  const rows = S.filteredRows.map(r => {
+  // Optionally restore removed source points with interpolated cleaned values.
+  let srcRows = S.filteredRows, gap = null;
+  if (gapFillWanted()){
+    gap = buildGapRows();
+    srcRows = S.filteredRows.concat(gap.rows);
+    srcRows.sort((a, b) => (a.__ri || 0) - (b.__ri || 0));   // keep the source file's order
+  }
+  const rows = srcRows.map(r => {
     const o = {};
     for (let i = 0; i < outNames.length; i++) o[outNames[i]] = r[srcKeys[i]];
     if (lon) o[lon] = r[lon];
@@ -4769,7 +4875,139 @@ function buildExportData(){
     if (r.__poly__) o.__poly__ = r.__poly__;
     return o;
   });
-  return { cols: outNames, rows, mode };
+  return { cols: outNames, rows, mode, gap };
+}
+
+/* ---------------------------------------------------------------
+   Interpolated gap fill for point exports.
+   Filtering leaves holes that online platforms draw as "no yield".
+   This restores the SOURCE points that were removed (all original
+   attributes carried over) and gives them cleaned yield/moisture
+   values interpolated from the cleaned points (IDW). Restored points
+   are only kept when they lie inside the boundary and do not
+   physically overlap a point already in the output; candidates are
+   processed in time order, so the one that occurred first wins.
+   Points that survived filtering are never dropped.
+   Only offered for the Streamlined / Simplified column sets.
+   --------------------------------------------------------------- */
+function gapFillBlockReason(){
+  if (getExportMode() === "full") return "Not available with the Full column set — choose Streamlined or Simplified.";
+  if (!S.boundary) return "Needs a field boundary — import one on the Boundary tab.";
+  return null;
+}
+function gapFillWanted(){
+  const c = document.getElementById("exportGapFill");
+  return !!(c && c.checked && !c.disabled && !gapFillBlockReason());
+}
+function refreshGapFillUI(){
+  const c = document.getElementById("exportGapFill"), h = document.getElementById("exportGapFillHint");
+  if (!c) return;
+  const reason = gapFillBlockReason();
+  c.disabled = !!reason;
+  if (reason) c.checked = false;
+  h.textContent = reason || "";
+}
+function gapNote(gap){
+  return gap ? ` (incl. ${gap.rows.length.toLocaleString()} interpolated gap point${gap.rows.length === 1 ? "" : "s"})` : "";
+}
+function buildGapRows(){
+  const { lon, lat, timestamp } = S.mapping;
+  const kept = S.filteredRows;
+  const sample = kept[0];
+  const cleanCols = ["yield_dry_clean", "yield_wet_clean", "moisture_clean"].filter(c => sample && sample[c] !== undefined);
+  const res = { rows: [], candidates: 0, overlapSkipped: 0, outsideSkipped: 0, noValueSkipped: 0, radiusM: 0 };
+  if (!kept.length || !cleanCols.length || !S.boundary) return res;
+
+  const keptIds = new Set();
+  for (const r of kept) if (r.__ri !== undefined) keptIds.add(r.__ri);
+
+  // local metric projection
+  let sLat = 0, sLon = 0, n = 0;
+  for (const r of kept){
+    const la = parseFloat(r[lat]), lo = parseFloat(r[lon]);
+    if (isFinite(la) && isFinite(lo)){ sLat += la; sLon += lo; n++; }
+  }
+  if (!n) return res;
+  const lat0 = sLat / n, lon0 = sLon / n;
+  const mLat = 111320, mLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+  const kx = new Float64Array(kept.length), ky = new Float64Array(kept.length);
+  for (let i = 0; i < kept.length; i++){
+    const la = parseFloat(kept[i][lat]), lo = parseFloat(kept[i][lon]);
+    kx[i] = isFinite(lo) ? (lo - lon0) * mLon : NaN;
+    ky[i] = isFinite(la) ? (la - lat0) * mLat : NaN;
+  }
+
+  // typical point spacing (median nearest-neighbour distance of a sample of kept points)
+  const nnIdx = makePointIndex(5);
+  for (let i = 0; i < kept.length; i++) if (kx[i] === kx[i] && ky[i] === ky[i]) nnIdx.add(kx[i], ky[i], i);
+  const nn = [];
+  const step = Math.max(1, Math.floor(kept.length / 3000));
+  for (let i = 0; i < kept.length; i += step){
+    if (kx[i] !== kx[i] || ky[i] !== ky[i]) continue;
+    const nb = nnIdx.knn(kx[i], ky[i], 2, 40);
+    for (const [d2, id] of nb){ if (id !== i && d2 > 1e-4){ nn.push(Math.sqrt(d2)); break; } }
+  }
+  nn.sort((a, b) => a - b);
+  const spacing = nn.length ? nn[nn.length >> 1] : 1;
+  const radius = Math.max(0.05, 0.5 * spacing);       // closer than this to an earlier point = overlapping
+  res.radiusM = radius;
+
+  // boundary test
+  const bFeats = S.boundary.features || [];
+  const bBox = bboxOfFeatureCollection(S.boundary);
+  const inside = (x, y) => {
+    if (x < bBox[0] || x > bBox[2] || y < bBox[1] || y > bBox[3]) return false;
+    for (const f of bFeats) if (pointInPolygonFeature(x, y, f)) return true;
+    return false;
+  };
+
+  // candidates: source points that did not survive the pipeline, inside the boundary
+  const cand = [];
+  for (let i = 0; i < S.rawRows.length; i++){
+    if (keptIds.has(i)) continue;
+    const raw = S.rawRows[i];
+    const la = parseFloat(raw[lat]), lo = parseFloat(raw[lon]);
+    if (!isFinite(la) || !isFinite(lo)) continue;
+    res.candidates++;
+    if (!inside(lo, la)){ res.outsideSkipped++; continue; }
+    cand.push({ i, x: (lo - lon0) * mLon, y: (la - lat0) * mLat, ts: timestamp ? parseTimestampToUnix(raw[timestamp]) : NaN });
+  }
+  cand.sort((a, b) => {
+    const ta = isFinite(a.ts) ? a.ts : Infinity, tb = isFinite(b.ts) ? b.ts : Infinity;
+    return ta !== tb ? (ta < tb ? -1 : 1) : a.i - b.i;
+  });
+
+  // overlap test: earliest first; surviving points always count as already present
+  const ov = makePointIndex(radius);
+  for (let i = 0; i < kept.length; i++) if (kx[i] === kx[i] && ky[i] === ky[i]) ov.add(kx[i], ky[i], 0);
+  const acc = [];
+  for (const c of cand){
+    if (ov.anyWithin(c.x, c.y, radius)){ res.overlapSkipped++; continue; }
+    ov.add(c.x, c.y, 0);
+    acc.push(c);
+  }
+  if (!acc.length) return res;
+
+  // interpolate each cleaned column at the accepted locations
+  const tx = Float64Array.from(acc, c => c.x), ty = Float64Array.from(acc, c => c.y);
+  const cell = Math.min(40, Math.max(3, spacing * 5));
+  const vals = {};
+  for (const col of cleanCols){
+    const vs = new Float64Array(kept.length);
+    for (let i = 0; i < kept.length; i++){ const v = parseFloat(kept[i][col]); vs[i] = isFinite(v) ? v : NaN; }
+    vals[col] = idwAtPoints(kx, ky, vs, tx, ty, { power: 2, k: 12, cell });
+  }
+  for (let j = 0; j < acc.length; j++){
+    const g = Object.assign({}, S.rawRows[acc[j].i]);   // every original attribute carried over
+    g.__ri = acc[j].i;
+    let any = false;
+    for (const col of cleanCols){
+      const v = vals[col][j];
+      if (isFinite(v)){ g[col] = v; any = true; } else g[col] = NaN;
+    }
+    if (any) res.rows.push(g); else res.noValueSkipped++;
+  }
+  return res;
 }
 function csvEscape(v){
   if (v === undefined || v === null) return "";
@@ -4780,18 +5018,19 @@ function csvEscape(v){
 
 document.getElementById("btnExportCsv").addEventListener("click", () => {
   if (!requireData()) return;
-  const { cols, rows } = buildExportData();
+  const { cols, rows, gap } = buildExportData();
   if (!cols.length){ toast("Simplified mode has no cleaned wet/dry/moisture columns to export yet — run Filters first, or switch to Full or Streamlined.", true); return; }
   const lines = [cols.join(",")];
   for (const r of rows) lines.push(cols.map(c=>csvEscape(r[c])).join(","));
   downloadBlob(lines.join("\n"), baseName()+"_export.csv", "text/csv");
-  toast("Exported CSV — " + rows.length.toLocaleString() + " records");
+  toast("Exported CSV — " + rows.length.toLocaleString() + " records" + gapNote(gap));
+  reportGapFill(gap);
 });
 
 document.getElementById("btnExportGeojson").addEventListener("click", () => {
   if (!requireData()) return;
   const { lon, lat } = S.mapping;
-  const { cols, rows } = buildExportData();
+  const { cols, rows, gap } = buildExportData();
   const propCols = cols.filter(c=>c!==lon && c!==lat);
   const isPolygon = rows.length && !!rows[0].__poly__;
   const feats = rows.map(r => {
@@ -4805,8 +5044,16 @@ document.getElementById("btnExportGeojson").addEventListener("click", () => {
   });
   const fc = { type:"FeatureCollection", features:feats };
   downloadBlob(JSON.stringify(fc), baseName()+"_export.geojson", "application/geo+json");
-  toast("Exported GeoJSON — " + feats.length.toLocaleString() + (isPolygon ? " polygons" : " points"));
+  toast("Exported GeoJSON — " + feats.length.toLocaleString() + (isPolygon ? " polygons" : " points") + gapNote(gap));
+  reportGapFill(gap);
 });
+function reportGapFill(gap){
+  const h = document.getElementById("exportGapFillHint");
+  if (!h || !gap) return;
+  h.textContent = `Last export: ${gap.rows.length.toLocaleString()} interpolated point(s) added from ${gap.candidates.toLocaleString()} removed source point(s) — ` +
+    `${gap.outsideSkipped.toLocaleString()} outside the boundary, ${gap.overlapSkipped.toLocaleString()} overlapping an earlier point (within ${gap.radiusM.toFixed(2)} m)` +
+    (gap.noValueSkipped ? `, ${gap.noValueSkipped.toLocaleString()} with no nearby cleaned value` : "") + " left out.";
+}
 function normalizeJsonVal(v){
   if (v === undefined) return null;
   if (typeof v === "number" && Number.isNaN(v)) return null;
@@ -4830,7 +5077,7 @@ document.getElementById("btnExportShapefile").addEventListener("click", async ()
     if (choice === "cancel") return;
     includeMeta = choice === "include";
   }
-  const { cols, rows } = buildExportData();
+  const { cols, rows, gap } = buildExportData();
   const propCols = cols.filter(c=>c!==lon && c!==lat);
   const isPolygon = rows.length && !!rows[0].__poly__;
   const { bytes: dbf, nameMap } = packDBF(rows, propCols);
@@ -4850,8 +5097,9 @@ document.getElementById("btnExportShapefile").addEventListener("click", async ()
   }
   const blob = await zip.generateAsync({ type:"blob" });
   downloadBlob(blob, base+".zip", "application/zip");
-  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points") +
+  toast("Exported Shapefile (.zip) — " + rows.length.toLocaleString() + (isPolygon ? " polygons" : " points") + gapNote(gap) +
     (includeMeta ? " + metadata .json" : (metaPlan.length ? ". Metadata .json NOT included — copy and rename it manually for FMIS use." : "")));
+  reportGapFill(gap);
 });
 
 document.getElementById("btnExportAgLeader").addEventListener("click", () => {
@@ -4899,6 +5147,10 @@ function unitToFeet(v, unit){
   if (unit === "m") return v*3.28084;
   return v;
 }
+
+document.querySelectorAll('input[name="exportColMode"]').forEach(r => r.addEventListener("change", refreshGapFillUI));
+document.querySelectorAll('.tabbtn[data-tab="export"]').forEach(b => b.addEventListener("click", refreshGapFillUI));
+refreshGapFillUI();
 
 function requireData(){
   if (!S.filteredRows.length){ toast("No data to export — import and apply filters first.", true); return false; }
